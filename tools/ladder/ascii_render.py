@@ -10,6 +10,7 @@ enters and leaves on. Series concatenates Blocks horizontally aligned on that
 row; Parallel stacks them and threads a junction column down each side.
 """
 
+from layout import Block
 from model import BLOCK, COIL, CONTACT, Element, Empty, Parallel, Series
 
 POU_TYPE_KEYWORDS = {
@@ -17,18 +18,6 @@ POU_TYPE_KEYWORDS = {
     "functionBlock": "FUNCTION_BLOCK",
     "function": "FUNCTION",
 }
-
-
-class Block(object):
-    def __init__(self, lines, connect_row):
-        self.lines = lines
-        self.connect_row = connect_row
-
-    @property
-    def width(self):
-        if not self.lines:
-            return 0
-        return max(len(line) for line in self.lines)
 
 
 def _symbol_and_label(element):

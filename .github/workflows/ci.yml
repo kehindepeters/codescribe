@@ -31,16 +31,24 @@ jobs:
         shell: pwsh
         run: .\ipy\net45\ipy.exe tools\ci\import_smoke.py
 
-      # The ladder renderer is destined for src/, so it has to pass under the
+      # The renderers are destined for src/, so they have to pass under the
       # same interpreter CODESYS embeds - not just under CI's Python 3.
-      - name: Ladder renderer tests under IronPython 2.7
+      - name: Renderer tests under IronPython 2.7
         shell: pwsh
-        run: .\ipy\net45\ipy.exe tools\ladder\tests\test_ladder.py
+        run: |
+          # A native exe's exit code does not halt a pwsh script, so a failure
+          # in the first suite would otherwise be masked by the second passing.
+          .\ipy\net45\ipy.exe tools\ladder\tests\test_ladder.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\ipy\net45\ipy.exe tools\ladder\tests\test_fbd.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   ladder:
     name: ladder
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Ladder renderer tests under Python 3
-        run: python3 tools/ladder/tests/test_ladder.py
+      - name: Renderer tests under Python 3
+        run: |
+          python3 tools/ladder/tests/test_ladder.py
+          python3 tools/ladder/tests/test_fbd.py

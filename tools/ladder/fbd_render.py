@@ -1,0 +1,167 @@
+# REMEMBER: this must stay valid under IronPython 2.7 as well as Python 3.
+"""Render a parsed Function Block Diagram as ASCII boxes.
+
+Layout is derived from the call tree, not from the exported coordinates. Each
+block's inputs are rendered to its left and stacked vertically, so a pin fed
+by another block gets that block's whole box beside it. Pin rows are placed at
+whatever row their source ended up on, which keeps every wire horizontal.
+"""
+
+from ascii_render import render_declaration
+from layout import Block, stack
+from model import Assign, Call, Signal
+
+
+def _render_signal(node):
+    return Block([node.label or ""], 0)
+
+
+def _render_assign(node):
+    source = _render(node.source) if node.source is not None else Block([""], 0)
+    lines = source.padded(source.width)
+    tail = "---> " + (node.label or "?")
+    out = []
+    for index, line in enumerate(lines):
+        out.append(line + tail if index == source.connect_row else line)
+    return Block(out, source.connect_row)
+
+
+def _is_wired(source):
+    """False for a pin CODESYS exported with no source, or an empty expression.
+
+    Those must not be drawn with a wire running off to the left, because there
+    is nothing out there feeding them.
+    """
+    if source is None:
+        return False
+    return not (isinstance(source, Signal) and not source.label)
+
+
+def _render_call(call):
+    input_blocks = []
+    for _pin, source in call.inputs:
+        input_blocks.append(_render(source) if source is not None else Block([""], 0))
+
+    left_lines, pin_rows = stack(input_blocks)
+    # A minimum lead-in, so a source exactly as wide as the column still shows
+    # a wire and back-to-back boxes do not fuse into one run of borders.
+    left_width = (max([len(line) for line in left_lines]) + 2) if left_lines else 0
+
+    # Only the rows where a source hands off to a pin get their wire extended;
+    # a nested box's own internal wires already end at that box's edge.
+    handoff = set()
+    for index, pin_and_source in enumerate(call.inputs):
+        if _is_wired(pin_and_source[1]):
+            handoff.add(pin_rows[index])
+
+    left = []
+    for index, line in enumerate(left_lines):
+        fill = "-" if index in handoff else " "
+        left.append(line + fill * (left_width - len(line)))
+
+    input_rows = list(pin_rows)
+    output_rows = []
+    for index in range(len(call.outputs)):
+        if index < len(input_rows):
+            output_rows.append(input_rows[index])
+        else:
+            # More outputs than inputs: the surplus hangs below the last pin.
+            base = input_rows[-1] if input_rows else -1
+            output_rows.append(base + index - len(input_rows) + 1)
+
+    all_rows = (input_rows + output_rows) or [0]
+    box_first, box_last = min(all_rows), max(all_rows)
+
+    # The title and top border sit two rows above the first pin, so everything
+    # shifts down if the first pin would land at the very top of the grid.
+    shift = max(0, 2 - box_first)
+    if shift:
+        left = [" " * left_width] * shift + left
+        input_rows = [row + shift for row in input_rows]
+        output_rows = [row + shift for row in output_rows]
+        box_first += shift
+        box_last += shift
+
+    in_at = {}
+    for index, pin_and_source in enumerate(call.inputs):
+        in_at[input_rows[index]] = pin_and_source[0] or "?"
+
+    out_at = {}
+    for index, pin_and_assignment in enumerate(call.outputs):
+        pin, assigned = pin_and_assignment
+        text = pin or "?"
+        if assigned:
+            text += " => " + assigned
+        out_at[output_rows[index]] = text
+
+    title = call.title
+    widths = [len(title)]
+    for row in range(box_first, box_last + 1):
+        widths.append(len(in_at.get(row, "")) + 3 + len(out_at.get(row, "")))
+    inner = max(widths)
+
+    height = max(len(left), box_last + 2)
+    left += [" " * left_width] * (height - len(left))
+
+    lines = []
+    for row in range(height):
+        if row == box_first - 2:
+            box = title.center(inner + 2)
+        elif row == box_first - 1 or row == box_last + 1:
+            box = "+" + "-" * inner + "+"
+        elif box_first <= row <= box_last:
+            left_pin = in_at.get(row, "")
+            right_pin = out_at.get(row, "")
+            box = "|" + left_pin + " " * (inner - len(left_pin) - len(right_pin)) + right_pin + "|"
+        else:
+            box = " " * (inner + 2)
+        lines.append(left[row] + box)
+
+    # The wire leaves on whichever output pin the consumer asked for.
+    connect_row = box_first
+    pins = [pin for pin, _assigned in call.outputs]
+    if call.active_output in pins:
+        connect_row = output_rows[pins.index(call.active_output)]
+    elif output_rows:
+        connect_row = output_rows[0]
+
+    return Block(lines, connect_row)
+
+
+def _render(node):
+    if isinstance(node, Call):
+        return _render_call(node)
+    if isinstance(node, Assign):
+        return _render_assign(node)
+    if isinstance(node, Signal):
+        return _render_signal(node)
+    raise TypeError("cannot render %r" % (node,))
+
+
+def render_network(tree):
+    return _render(tree).lines
+
+
+def render_pou(pou):
+    """Render a whole FBD POU: declaration, then one box tree per network."""
+    lines = render_declaration(pou)
+    lines.append("")
+
+    if not pou.networks:
+        lines.append("(* no networks *)")
+
+    for index, network in enumerate(pou.networks):
+        comment, tree = network
+        header = "(* Network " + str(index + 1)
+        if comment:
+            # CODESYS comments usually already start with //, which would read
+            # oddly nested inside an ST block comment.
+            header += ": " + comment.lstrip("/").strip()
+        lines.append(header + " *)")
+        lines.extend(render_network(tree))
+        lines.append("")
+
+    while lines and lines[-1] == "":
+        lines.pop()
+
+    return [line.rstrip() for line in lines]

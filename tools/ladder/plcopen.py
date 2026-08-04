@@ -1,0 +1,196 @@
+# REMEMBER: this must stay valid under IronPython 2.7 as well as Python 3.
+"""Low-level PLCopen XML helpers shared by every language renderer.
+
+Namespaces are stripped rather than matched. The exact URI varies between
+schema revisions - the hand-authored fixture is tc6_0201, real CODESYS output
+is tc6_0200 - and CODESYS layers proprietary extensions on top. Matching local
+tag names survives all of it.
+"""
+
+import xml.etree.ElementTree as ET
+
+from model import Connection
+
+TRUTHY = ("true", "1")
+
+# Body element names, one of which wraps every POU implementation.
+BODY_LANGUAGES = ("LD", "FBD", "SFC", "ST", "IL", "CFC")
+
+
+def tag(elem):
+    """Local tag name, with any namespace stripped."""
+    return elem.tag.split("}")[-1]
+
+
+def find_child(elem, name):
+    for child in elem:
+        if tag(child) == name:
+            return child
+    return None
+
+
+def child_text(elem, name):
+    child = find_child(elem, name)
+    if child is None or child.text is None:
+        return None
+    return child.text.strip()
+
+
+def is_true(elem, attr_name):
+    return (elem.get(attr_name) or "").lower() in TRUTHY
+
+
+def attr(elem, name):
+    """An attribute, treating CODESYS's literal "none" as absent."""
+    value = elem.get(name)
+    if value in (None, "", "none"):
+        return None
+    return value
+
+
+def direct_connections(elem):
+    """Wires arriving at this element's own connectionPointIn children.
+
+    Several <connection> under a single connectionPointIn is how PLCopen
+    spells a parallel branch (a wired OR), so order and multiplicity matter.
+    This deliberately does not recurse: a block's pins hang off
+    <inputVariables> and are collected separately, with their pin names.
+    """
+    connections = []
+    for point in elem:
+        if tag(point) != "connectionPointIn":
+            continue
+        for child in point:
+            if tag(child) != "connection":
+                continue
+            ref = child.get("refLocalId")
+            if ref is not None:
+                connections.append(Connection(ref, source_pin=attr(child, "formalParameter")))
+    return connections
+
+
+def block_connections(block_elem):
+    """Wires arriving at a block, tagged with the pin they land on."""
+    connections = []
+    for group_name in ("inputVariables", "inOutVariables"):
+        group = find_child(block_elem, group_name)
+        if group is None:
+            continue
+        for var in group:
+            if tag(var) != "variable":
+                continue
+            pin = var.get("formalParameter")
+            for connection in direct_connections(var):
+                connection.target_pin = pin
+                connections.append(connection)
+    return connections
+
+
+def block_outputs(block_elem):
+    """(pin, assigned variable) for each block output.
+
+    CODESYS writes an assignment straight onto the output pin as
+    <connectionPointOut><expression>uiCurrSupplyVolt</expression>.
+    """
+    outputs = []
+    group = find_child(block_elem, "outputVariables")
+    if group is None:
+        return outputs
+    for var in group:
+        if tag(var) != "variable":
+            continue
+        assigned = None
+        point = find_child(var, "connectionPointOut")
+        if point is not None:
+            expression = find_child(point, "expression")
+            if expression is not None and expression.text:
+                assigned = expression.text.strip()
+        outputs.append((var.get("formalParameter"), assigned))
+    return outputs
+
+
+def comment_text(elem):
+    """The text of a <comment>, which nests its content in an xhtml element."""
+    content = find_child(elem, "content")
+    if content is None:
+        return ""
+    xhtml = find_child(content, "xhtml")
+    if xhtml is None or xhtml.text is None:
+        return ""
+    return xhtml.text.strip()
+
+
+# --- interface -------------------------------------------------------------
+
+SCOPE_TAGS = {
+    "localVars": "VAR",
+    "inputVars": "VAR_INPUT",
+    "outputVars": "VAR_OUTPUT",
+    "inOutVars": "VAR_IN_OUT",
+    "tempVars": "VAR_TEMP",
+    "globalVars": "VAR_GLOBAL",
+}
+
+
+def _type_name(var_elem):
+    type_elem = find_child(var_elem, "type")
+    if type_elem is None:
+        return "BOOL"
+    for child in type_elem:
+        name = tag(child)
+        if name == "derived":
+            return child.get("name") or "UNKNOWN"
+        return name
+    return "BOOL"
+
+
+def _initial_value(var_elem):
+    value_elem = find_child(var_elem, "initialValue")
+    if value_elem is None:
+        return None
+    simple = find_child(value_elem, "simpleValue")
+    if simple is None:
+        return None
+    return simple.get("value")
+
+
+def parse_interface(interface_elem):
+    """Variables from a POU interface, in declaration order."""
+    from model import Variable
+
+    variables = []
+    if interface_elem is None:
+        return variables
+    for group in interface_elem:
+        scope = SCOPE_TAGS.get(tag(group))
+        if scope is None:
+            continue
+        if is_true(group, "constant"):
+            scope += " CONSTANT"
+        for var_elem in group:
+            if tag(var_elem) != "variable":
+                continue
+            variables.append(
+                Variable(
+                    name=var_elem.get("name") or "",
+                    type_name=_type_name(var_elem),
+                    initial_value=_initial_value(var_elem),
+                    scope=scope,
+                )
+            )
+    return variables
+
+
+def iter_bodies(source):
+    """Yield (pou_elem, language, body_elem) for every POU with an implementation."""
+    root = ET.parse(source).getroot()
+    for elem in root.iter():
+        if tag(elem) != "pou":
+            continue
+        body = find_child(elem, "body")
+        if body is None:
+            continue
+        for child in body:
+            if tag(child) in BODY_LANGUAGES:
+                yield elem, tag(child), child
+                break

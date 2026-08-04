@@ -87,11 +87,73 @@ class Variable(object):
 
 
 class Pou(object):
-    def __init__(self, name, pou_type, variables=None, rungs=None):
+    """A parsed POU. ``rungs`` is populated for LD, ``networks`` for FBD."""
+
+    def __init__(self, name, pou_type, variables=None, rungs=None, networks=None, language=None):
         self.name = name
         self.pou_type = pou_type
+        self.language = language
         self.variables = variables if variables is not None else []
         self.rungs = rungs if rungs is not None else []
+        self.networks = networks if networks is not None else []
+
+
+# --- FBD tree --------------------------------------------------------------
+#
+# FBD has no power rail, so there is no single wire to hang a series/parallel
+# tree off. A network is instead a tree of calls: each block pin is fed either
+# by a named value or by another block's output.
+
+
+class Signal(object):
+    """A named value entering a network: a variable, a literal, or nothing."""
+
+    def __init__(self, label):
+        self.label = label
+
+    def __repr__(self):
+        return "Signal(%r)" % (self.label,)
+
+
+class Call(object):
+    """An FBD block call - a box with named input and output pins.
+
+    ``inputs`` is [(pin_name, source)] where source is a Call, a Signal or
+    None. ``outputs`` is [(pin_name, assigned_variable)]. Pin order is kept
+    exactly as exported; unlike LD there is no power pin to hoist.
+    """
+
+    def __init__(self, type_name=None, instance_name=None, inputs=None, outputs=None, active_output=None):
+        self.type_name = type_name
+        self.instance_name = instance_name
+        self.inputs = inputs if inputs is not None else []
+        self.outputs = outputs if outputs is not None else []
+        self.active_output = active_output
+
+    @property
+    def title(self):
+        if self.instance_name:
+            return self.instance_name + " : " + (self.type_name or "?")
+        return self.type_name or "?"
+
+    @property
+    def is_operator(self):
+        """Operators and functions have no instance, so they inline as expressions."""
+        return not self.instance_name
+
+    def __repr__(self):
+        return "Call(%r, %r)" % (self.type_name, self.instance_name)
+
+
+class Assign(object):
+    """An outVariable: a network whose result is stored into a variable."""
+
+    def __init__(self, label, source=None):
+        self.label = label
+        self.source = source
+
+    def __repr__(self):
+        return "Assign(%r)" % (self.label,)
 
 
 # --- expression tree -------------------------------------------------------
