@@ -30,3 +30,17 @@ jobs:
       - name: Import smoke test with stubbed scriptengine
         shell: pwsh
         run: .\ipy\net45\ipy.exe tools\ci\import_smoke.py
+
+      # The ladder renderer is destined for src/, so it has to pass under the
+      # same interpreter CODESYS embeds - not just under CI's Python 3.
+      - name: Ladder renderer tests under IronPython 2.7
+        shell: pwsh
+        run: .\ipy\net45\ipy.exe tools\ladder\tests\test_ladder.py
+
+  ladder:
+    name: ladder
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ladder renderer tests under Python 3
+        run: python3 tools/ladder/tests/test_ladder.py
