@@ -27,15 +27,19 @@ OUT_VARIABLE = "outVariable"
 JUMP = "jump"
 LABEL = "label"
 RETURN = "return"
+CONNECTOR = "connector"
+CONTINUATION = "continuation"
 
 # vendorElement carries CODESYS editor state (network titles, implementation
 # attributes) and holds no logic, so it is skipped entirely.
-FBD_KINDS = (BLOCK, IN_VARIABLE, OUT_VARIABLE, COMMENT, JUMP, RETURN, LABEL, "continuation", "connector")
+FBD_KINDS = (BLOCK, IN_VARIABLE, OUT_VARIABLE, COMMENT, JUMP, RETURN, LABEL, CONTINUATION, CONNECTOR)
 
 # Elements that can terminate a network. A jump or return ends one just as
 # surely as an assignment does - leaving them out drops the entire guard
-# network they belong to, silently.
-SINK_KINDS = (BLOCK, OUT_VARIABLE, JUMP, RETURN, LABEL)
+# network they belong to, silently. A connector too: its continuations refer
+# to it by name, never by localId, so nothing ever "consumes" it and without
+# a sink entry its whole upstream network would vanish.
+SINK_KINDS = (BLOCK, OUT_VARIABLE, JUMP, RETURN, LABEL, CONNECTOR)
 
 
 def parse_fbd_body(body_elem):
@@ -59,6 +63,9 @@ def parse_fbd_body(body_elem):
         elif kind in (JUMP, LABEL):
             # Both carry their target in a "label" attribute, not a child.
             label = child.get("label")
+        elif kind in (CONNECTOR, CONTINUATION):
+            # The wire's name is a "name" attribute; there is no expression.
+            label = child.get("name")
         else:
             label = child_text(child, "expression")
 
@@ -106,7 +113,7 @@ def _build(node, by_id, visiting, via_pin=None):
             st_code=list(node.st_code),
         )
 
-    if node.kind in (OUT_VARIABLE, JUMP, RETURN):
+    if node.kind in (OUT_VARIABLE, JUMP, RETURN, CONNECTOR):
         source = None
         for connection in node.inputs:
             upstream = by_id.get(connection.ref_id)
@@ -114,12 +121,19 @@ def _build(node, by_id, visiting, via_pin=None):
                 source = _build(upstream, by_id, visiting, connection.source_pin)
                 break
         if node.kind == OUT_VARIABLE:
+            return Assign(node.label or "?", source, negated=node.negated)
+        if node.kind == CONNECTOR:
+            # A connector names the wire feeding it, so it renders as an
+            # assignment to that name and the matching continuation reads the
+            # name back. Not real ST - but the logic stays on the page.
             return Assign(node.label or "?", source)
         return Jump(node.label or ("RETURN" if node.kind == RETURN else "?"), source)
 
     if node.kind == LABEL:
         return Label(node.label or "?")
 
+    # A continuation lands here: its label is the wire's name, so it reads
+    # like any other signal.
     return Signal(node.label or "", negated=node.negated)
 
 

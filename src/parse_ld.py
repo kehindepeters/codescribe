@@ -9,8 +9,11 @@ expression tree per rung.
 from model import (
     BLOCK,
     IN_VARIABLE,
+    JUMP,
+    LABEL,
     LEFT_RAIL,
     RAILS,
+    RETURN,
     RIGHT_RAIL,
     CONTACT,
     COIL,
@@ -46,8 +49,9 @@ KNOWN_KINDS = (
     BLOCK,
     "inVariable",
     "outVariable",
-    "jump",
-    "return",
+    JUMP,
+    RETURN,
+    LABEL,
 )
 
 
@@ -56,6 +60,10 @@ def _node_label(elem, kind):
         # typeName and instanceName are attributes in CODESYS's output, not
         # the child elements a literal schema reading would suggest.
         return elem.get("instanceName") or elem.get("typeName")
+    if kind in (JUMP, LABEL):
+        # The target is a "label" attribute, not a child element - same as in
+        # FBD bodies. Reading child elements here loses the target entirely.
+        return elem.get("label")
     return child_text(elem, "variable") or child_text(elem, "expression")
 
 
@@ -148,7 +156,10 @@ def _build_block(node, by_id, visiting, via_pin):
             continue
         sub_expr = _build_expr(upstream, by_id, visiting, connection.source_pin)
         if upstream.kind == IN_VARIABLE:
-            side_pins.append((connection.target_pin, upstream.label or ""))
+            # Flattened through expr_to_text, not taken from the raw label:
+            # an in-place negated inVariable must keep its NOT, or the pin
+            # silently inverts.
+            side_pins.append((connection.target_pin, expr_to_text(sub_expr)))
         elif power_pin is None:
             power_pin = connection.target_pin
             power_expr = sub_expr

@@ -212,6 +212,31 @@ check(
 )
 
 
+# --- logic fidelity ----------------------------------------------------------
+
+# Shapes whose mishandling renders the *inverse* of the program, or fabricates
+# logic that is not there. For a review artifact that is worse than a crash.
+FIDELITY = os.path.join(HERE, "fixtures", "fbd_fidelity.plcopen.xml")
+fid = parse_fbd.parse_pous(FIDELITY)[0]
+fid_st = st_render.render_pou(fid)
+fid_art = fbd_render.render_pou(fid)
+
+# A connector terminates its network, so all three must survive.
+check_equal("fidelity: all three networks survive", len(fid.networks), 3)
+
+# negated="true" on an outVariable inverts the logic if it is dropped.
+check("fidelity: negated output inverts in ST", any("xInverted := NOT xIn;" in line for line in fid_st))
+check("fidelity: negated output is marked in the diagram", any("o> xInverted" in line for line in fid_art))
+
+# A connector names a wire; the continuation re-emits it. Before these were
+# handled, the AND network vanished and the consumer rendered "xBoth := FALSE;"
+# - fabricated logic, not just missing logic.
+check("fidelity: connector network keeps its logic", any("C1 := xRun AND xReady;" in line for line in fid_st))
+check("fidelity: continuation resolves to the named wire", any("xBoth := C1;" in line for line in fid_st))
+check("fidelity: nothing is fabricated as FALSE", not any(":= FALSE" in line for line in fid_st))
+check("fidelity: the connector's source reaches the diagram", any("xRun" in line for line in fid_art))
+
+
 # --- language dispatch -----------------------------------------------------
 
 check_equal("LD parser ignores FBD bodies", parse_ld.parse_pous(FBD_SOURCE), [])

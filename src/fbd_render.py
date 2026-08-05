@@ -40,7 +40,9 @@ def _render_assign(node):
     chars = charset.active()
     source = _render(node.source) if node.source is not None else Block([""], 0)
     lines = source.padded(source.width)
-    tail = chars["H"] * 3 + "> " + (node.label or "?")
+    # The negation circle CODESYS draws on the pin, as an "o" on the wire.
+    head = "o> " if node.negated else "> "
+    tail = chars["H"] * 3 + head + (node.label or "?")
     out = []
     for index, line in enumerate(lines):
         out.append(line + tail if index == source.connect_row else line)

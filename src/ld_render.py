@@ -59,6 +59,10 @@ def _symbol_and_label(element):
     if kind == "return":
         return "<RETURN>", ""
 
+    if kind == "label":
+        # A jump target: a marker in the rung order, not a symbol on a wire.
+        return (element.label or "?") + ":", ""
+
     # In/out variables and anything unrecognised draw as a named box so
     # unhandled logic is visible rather than silently dropped.
     return "[" + (element.label or "?") + "]", ""

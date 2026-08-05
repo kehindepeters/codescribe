@@ -12,7 +12,7 @@ matches what the rung does.
 """
 
 from ld_render import render_declaration
-from model import BLOCK, COIL, Assign, Call, Element, Jump, Label, Series, Signal
+from model import BLOCK, COIL, JUMP, LABEL, RETURN, Assign, Call, Element, Jump, Label, Series, Signal
 from parse_ld import expr_to_text
 
 
@@ -44,9 +44,24 @@ def rung_to_statements(rung):
                     args.append("%s := %s" % (pin, value))
             name = item.instance_name or item.type_name or "?"
             statements.append("%s(%s);" % (name, ", ".join(args)))
+            # An assignment written straight onto an output pin executes every
+            # scan; the diagram draws it, so the ST must say it too.
+            for pin, assigned in item.output_pins:
+                if assigned:
+                    statements.append("%s := %s.%s;" % (assigned, name, pin))
             condition = (name + "." + item.active_output) if item.active_output else name
         elif isinstance(item, Element) and item.kind == COIL:
             statements.append(_coil_statement(item, condition))
+        elif isinstance(item, Element) and item.kind in (JUMP, RETURN):
+            # A jump ends the rung; its guard is the rung condition so far.
+            # Same comment form as the FBD path, so both grep alike.
+            target = (item.label or "?") if item.kind == JUMP else "RETURN"
+            if condition:
+                statements.append("IF %s THEN (* JMP %s *) END_IF" % (condition, target))
+            else:
+                statements.append("(* JMP %s *)" % target)
+        elif isinstance(item, Element) and item.kind == LABEL:
+            statements.append("(* label: %s *)" % (item.label or "?"))
         else:
             text = expr_to_text(item)
             if text:
@@ -114,8 +129,10 @@ def _fbd_value(node, statements):
         return ""
 
     if isinstance(node, Assign):
-        value = _fbd_value(node.source, statements)
-        statements.append("%s := %s;" % (node.label or "?", value or "FALSE"))
+        value = _fbd_value(node.source, statements) or "FALSE"
+        if node.negated:
+            value = "NOT " + _operand(value)
+        statements.append("%s := %s;" % (node.label or "?", value))
         return node.label or "?"
 
     if isinstance(node, Call):

@@ -100,6 +100,10 @@ finally:
 # Shifting every element 500px right must not change a single character of
 # output. This is the property that keeps diffs meaningful.
 moved = source_text.replace('<position x="', '<position x="9')
+# If the fixture is ever regenerated with different attribute order or
+# quoting, the replace would match nothing and this check would degenerate to
+# comparing a render with itself - green forever, proving nothing.
+check("the x shift touched the fixture", moved != source_text)
 moved_pou = None
 try:
     import io
@@ -111,7 +115,17 @@ except Exception as error:  # pragma: no cover - diagnostic path
     check("moved fixture parses", False, repr(error))
 
 if moved_pou is not None:
-    check_equal("layout changes do not affect output", render_pou(moved_pou), render_pou(pou))
+    check_equal("x shifts do not affect output", render_pou(moved_pou), render_pou(pou))
+
+# The same must hold vertically - a renderer that started ordering rungs by y
+# coordinate would break the promise while the x-only check stayed green.
+moved_down = source_text.replace('" y="', '" y="7')
+check("the y shift touched the fixture", moved_down != source_text)
+try:
+    moved_down_pou = parse_pous(io.BytesIO(moved_down.encode("utf-8")))[0]
+    check_equal("y shifts do not affect output", render_pou(moved_down_pou), render_pou(pou))
+except Exception as error:  # pragma: no cover - diagnostic path
+    check("y-moved fixture parses", False, repr(error))
 
 # --- rendering -------------------------------------------------------------
 
@@ -168,6 +182,38 @@ def check_golden(name, rendered_lines, golden_path):
 check_golden("golden output matches", rendered, EXPECTED)
 
 
+# --- logic fidelity ----------------------------------------------------------
+
+# Shapes that were dropped or inverted: a rung ending in a jump, its label, a
+# negated inVariable on a block pin, and an assignment on a block output pin.
+import st_render  # noqa: E402
+
+LD_FIDELITY = os.path.join(FIXTURES, "ld_fidelity.plcopen.xml")
+fidelity_pou = parse_pous(LD_FIDELITY)[0]
+fidelity_st = st_render.render_pou(fidelity_pou)
+fidelity_art = render_pou(fidelity_pou)
+
+# The jump rung and the label rung must both survive as rungs at all.
+check_equal("fidelity: all three rungs survive", len(fidelity_pou.rungs), 3)
+
+# A jump's target lives in a "label" attribute; losing it drew ">>?" and
+# emitted no ST for the whole rung, guard included.
+check("fidelity: jump target is drawn", any(">>SKIP" in line for line in fidelity_art))
+check("fidelity: guarded jump reaches ST", any("IF xGo THEN (* JMP SKIP *) END_IF" in line for line in fidelity_st))
+check("fidelity: label is drawn", any("SKIP:" in line for line in fidelity_art))
+check("fidelity: label reaches ST", any("(* label: SKIP *)" in line for line in fidelity_st))
+
+# model.Signal's docstring warns that dropping negated inverts the logic; the
+# LD block-pin path did exactly that.
+check("fidelity: negated pin keeps its NOT in ST", any("RESET := NOT xManual" in line for line in fidelity_st))
+check("fidelity: negated pin keeps its NOT in the box", any("RESET := NOT xManual" in line for line in fidelity_art))
+
+# An assignment on a block output pin executes every scan; the diagram drew it
+# but the ST - the half reviewers are told to trust - left it out.
+check("fidelity: output pin assignment reaches ST", any("iCount := ctr.CV;" in line for line in fidelity_st))
+check("fidelity: output pin assignment is drawn", any("CV => iCount" in line for line in fidelity_art))
+
+
 # --- byte order mark -------------------------------------------------------
 
 # CODESYS writes a BOM on every export_xml file, and the ElementTree it ships
@@ -180,15 +226,21 @@ import plcopen  # noqa: E402
 BOM = b"\xef\xbb\xbf"
 CODESYS_FIXTURES = os.path.join(FIXTURES, "codesys")
 
+bom_fixtures = 0
 for name in sorted(os.listdir(CODESYS_FIXTURES)):
     if not name.endswith(".xml"):
         continue
+    bom_fixtures += 1
     path = os.path.join(CODESYS_FIXTURES, name)
     raw = open(path, "rb").read()
     # The fixtures are real exports, so they should still carry their BOM. If
     # one loses it, this test stops proving anything.
     check(name + " is a real export, BOM and all", raw.startswith(BOM))
     check_equal(name + " is fed to the parser without its BOM", plcopen.read_document(path)[:1], b"<")
+
+# If the fixtures move, the loop above runs zero times and the BOM contract -
+# the one that only reproduces inside CODESYS - silently stops being tested.
+check("the BOM sweep found the real exports", bom_fixtures >= 3, "found %d" % bom_fixtures)
 
 check_equal(
     "leading whitespace is dropped too",

@@ -23,6 +23,7 @@ IN_VARIABLE = "inVariable"
 OUT_VARIABLE = "outVariable"
 JUMP = "jump"
 RETURN = "return"
+LABEL = "label"
 
 RAILS = (LEFT_RAIL, RIGHT_RAIL)
 
@@ -193,14 +194,19 @@ class Call(object):
 
 
 class Assign(object):
-    """An outVariable: a network whose result is stored into a variable."""
+    """An outVariable: a network whose result is stored into a variable.
 
-    def __init__(self, label, source=None):
+    Like an inVariable, CODESYS can negate the pin in place - and dropping
+    that inverts the stored value.
+    """
+
+    def __init__(self, label, source=None, negated=False):
         self.label = label
         self.source = source
+        self.negated = negated
 
     def __repr__(self):
-        return "Assign(%r)" % (self.label,)
+        return "Assign(%r, negated=%r)" % (self.label, self.negated)
 
 
 # --- expression tree -------------------------------------------------------
