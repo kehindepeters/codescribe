@@ -168,6 +168,40 @@ def check_golden(name, rendered_lines, golden_path):
 check_golden("golden output matches", rendered, EXPECTED)
 
 
+# --- byte order mark -------------------------------------------------------
+
+# CODESYS writes a BOM on every export_xml file, and the ElementTree it ships
+# in ScriptLib rejects one outright. CPython's expat accepts it silently, and
+# so does stock IronPython, so no amount of CI could catch this by parsing
+# alone - it only reproduces inside CODESYS. Asserting on the bytes handed to
+# the parser is what makes it catchable here.
+import plcopen  # noqa: E402
+
+BOM = b"\xef\xbb\xbf"
+CODESYS_FIXTURES = os.path.join(FIXTURES, "codesys")
+
+for name in sorted(os.listdir(CODESYS_FIXTURES)):
+    if not name.endswith(".xml"):
+        continue
+    path = os.path.join(CODESYS_FIXTURES, name)
+    raw = open(path, "rb").read()
+    # The fixtures are real exports, so they should still carry their BOM. If
+    # one loses it, this test stops proving anything.
+    check(name + " is a real export, BOM and all", raw.startswith(BOM))
+    check_equal(name + " is fed to the parser without its BOM", plcopen.read_document(path)[:1], b"<")
+
+check_equal(
+    "leading whitespace is dropped too",
+    plcopen.read_document(io.BytesIO(BOM + b"\n  <a/>")),
+    b"<a/>",
+)
+check_equal(
+    "a document with no BOM is untouched",
+    plcopen.read_document(io.BytesIO(b"<a/>")),
+    b"<a/>",
+)
+
+
 # --- real CODESYS export ---------------------------------------------------
 
 # Exported from CODESYS V3.5 SP11 via Project > Export > PLCopenXML. This is

@@ -7,6 +7,7 @@ is tc6_0200 - and CODESYS layers proprietary extensions on top. Matching local
 tag names survives all of it.
 """
 
+import io
 import xml.etree.ElementTree as ET
 
 from model import Connection
@@ -181,9 +182,43 @@ def parse_interface(interface_elem):
     return variables
 
 
+def read_document(source):
+    """Document bytes, with anything before the first tag removed.
+
+    CODESYS writes a UTF-8 BOM on every export_xml file, and the ElementTree
+    that CODESYS ships in ScriptLib rejects it outright:
+
+        Error('Syntax error at line 1: illegal data at start of file',)
+
+    CPython's expat accepts a BOM silently, so this is invisible outside
+    CODESYS. Slicing to the first "<" handles the BOM however it is
+    represented, plus any stray leading whitespace, in one step - nothing
+    before the first tag can be XML anyway.
+
+    ``source`` is a path or a file object. io.open is used rather than the
+    builtin so a binary read returns real bytes under IronPython too.
+    """
+    if hasattr(source, "read"):
+        data = source.read()
+    else:
+        handle = io.open(source, "rb")
+        try:
+            data = handle.read()
+        finally:
+            handle.close()
+
+    if not isinstance(data, bytes):
+        data = data.encode("utf-8")
+
+    start = data.find(b"<")
+    if start > 0:
+        data = data[start:]
+    return data
+
+
 def iter_bodies(source):
     """Yield (pou_elem, language, body_elem) for every POU with an implementation."""
-    root = ET.parse(source).getroot()
+    root = ET.fromstring(read_document(source))
     for elem in root.iter():
         if tag(elem) != "pou":
             continue
