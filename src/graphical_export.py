@@ -17,6 +17,7 @@ does not.
 
 import os
 import tempfile
+import time
 
 import fbd_render
 import ld_render
@@ -30,14 +31,51 @@ from util import open_utf8
 # and must never be mistaken for source.
 RENDERED_SUFFIX = ".txt"
 
+# Rendering adds a second CODESYS-side export per graphical POU, so the cost
+# is worth reporting rather than leaving people to wonder why the export got
+# slower. Split so it is obvious whether CODESYS or this code is the cost.
+STATS = {"rendered": 0, "skipped": 0, "export_xml_seconds": 0.0, "render_seconds": 0.0}
+
+
+def reset_stats():
+    STATS.update({"rendered": 0, "skipped": 0, "export_xml_seconds": 0.0, "render_seconds": 0.0})
+
+
+def summary():
+    """One line describing what rendering cost, or None if it did nothing."""
+    if not STATS["rendered"] and not STATS["skipped"]:
+        return None
+    return "Rendered %d graphical POUs in %.1fs (%.1fs CODESYS export_xml, %.1fs rendering); skipped %d" % (
+        STATS["rendered"],
+        STATS["export_xml_seconds"] + STATS["render_seconds"],
+        STATS["export_xml_seconds"],
+        STATS["render_seconds"],
+        STATS["skipped"],
+    )
+
+
+# Body language -> (parser, diagram renderer). SFC and CFC are absent, so they
+# fall through and no file is written for them.
+RENDERERS = {
+    parse_ld.LANGUAGE: (parse_ld, ld_render),
+    parse_fbd.LANGUAGE: (parse_fbd, fbd_render),
+}
+
 
 def _render_pous(plcopen_path):
-    """(pou, art_renderer) for every POU in the file we know how to draw."""
+    """(pou, art_renderer) for every POU in the file we know how to draw.
+
+    One pass over the document. Asking each language parser in turn would
+    re-read and re-parse the whole file once per language, which is pure waste
+    on a project with hundreds of POUs.
+    """
     found = []
-    for pou in parse_ld.parse_pous(plcopen_path):
-        found.append((pou, ld_render))
-    for pou in parse_fbd.parse_pous(plcopen_path):
-        found.append((pou, fbd_render))
+    for pou_elem, language, body in plcopen.iter_bodies(plcopen_path):
+        entry = RENDERERS.get(language)
+        if entry is None:
+            continue
+        parser, art_renderer = entry
+        found.append((parser.pou_from_body(pou_elem, body), art_renderer))
     return found
 
 
@@ -73,15 +111,22 @@ def write_rendered_text(obj, base_path):
     handle, temp_path = tempfile.mkstemp(suffix=".plcopen.xml")
     os.close(handle)
     try:
+        started = time.time()
         obj.export_xml(path=temp_path, recursive=False)
+        STATS["export_xml_seconds"] += time.time() - started
 
+        started = time.time()
         lines = render_plcopen(temp_path)
         if not lines:
+            STATS["skipped"] += 1
+            STATS["render_seconds"] += time.time() - started
             return False
 
         with open_utf8(base_path + RENDERED_SUFFIX, "w") as f:
             f.write(u"\n".join(lines))
             f.write(u"\n")
+        STATS["rendered"] += 1
+        STATS["render_seconds"] += time.time() - started
         return True
     except Exception as error:
         print("WARNING: could not render " + obj.get_name() + ": " + repr(error))

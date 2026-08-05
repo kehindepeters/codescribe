@@ -8,7 +8,16 @@ tag names survives all of it.
 """
 
 import io
-import xml.etree.ElementTree as ET
+import warnings
+
+# CODESYS puts its own ScriptLib ahead of the standard library, and its xml
+# package imports the deprecated xmllib on the way in. That prints a
+# DeprecationWarning plus the offending source line into the message view,
+# where CODESYS red-flags both as errors. Nobody can act on it - it is
+# CODESYS's own bundled library - so it is silenced at the point it fires.
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    import xml.etree.ElementTree as ET
 
 from model import Connection
 
@@ -252,8 +261,13 @@ def _to_ascii(data):
     sections, which are the one place a numeric reference would stay literal
     text instead of being expanded.
     """
-    if not any(byte > 0x7F for byte in bytearray(data)):
+    try:
+        # Native-speed check, and the overwhelmingly common case. Scanning
+        # byte by byte in Python costs real time on a large project.
+        data.decode("ascii")
         return data
+    except UnicodeDecodeError:
+        pass
 
     try:
         text = data.decode("utf-8")
@@ -262,13 +276,14 @@ def _to_ascii(data):
         # preserves every byte as a character so nothing is lost.
         text = data.decode("latin-1")
 
-    pieces = []
-    for character in text:
-        if ord(character) < 128:
-            pieces.append(character)
-        else:
-            pieces.append("&#%d;" % ord(character))
-    return "".join(pieces).encode("ascii")
+    try:
+        # This error handler does exactly the job, natively.
+        return text.encode("ascii", "xmlcharrefreplace")
+    except (LookupError, ValueError):
+        pieces = []
+        for character in text:
+            pieces.append(character if ord(character) < 128 else "&#%d;" % ord(character))
+        return "".join(pieces).encode("ascii")
 
 
 # XML 1.0 forbids these outright - they cannot even be written as a numeric

@@ -5,6 +5,7 @@ import os
 
 import scriptengine  # type: ignore
 
+import graphical_export
 from entrypoint import get_src_folder
 from import_export import OBJECT_TYPE_TO_EXPORT_FUNCTION, write_native
 from object_type import ObjectType, get_object_type
@@ -57,6 +58,7 @@ def export_child(child_obj, parent_obj, parent_folder_path):
 try:
     print_python_version()
     assert_project_open()
+    graphical_export.reset_stats()
 
     src_folder = get_src_folder(scriptengine.projects.primary)
     print("Writing to: " + src_folder)
@@ -78,6 +80,10 @@ try:
         export_child(child_obj, None, staging_folder)
 
     finalize_export_folder(src_folder, staging_folder)
+
+    rendering_summary = graphical_export.summary()
+    if rendering_summary is not None:
+        print(rendering_summary)
 except Exception as e:
     print(e)
     ui_error_with_traceback("Export Lib To Files failed.")

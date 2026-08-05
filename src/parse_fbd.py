@@ -152,19 +152,28 @@ def build_networks(nodes):
     return networks
 
 
+LANGUAGE = "FBD"
+
+
+def pou_from_body(pou_elem, body_elem):
+    """Build a Pou from an already-located <FBD> body.
+
+    Split out from parse_pous so a caller handling several languages can make
+    a single pass over the document rather than one per language.
+    """
+    return Pou(
+        name=pou_elem.get("name") or "<unnamed>",
+        pou_type=pou_elem.get("pouType") or "program",
+        language=LANGUAGE,
+        variables=parse_interface(find_child(pou_elem, "interface")),
+        networks=build_networks(parse_fbd_body(body_elem)),
+    )
+
+
 def parse_pous(source):
     """Parse every FBD POU in a PLCopen file. Other languages are skipped."""
     pous = []
     for pou_elem, language, body in iter_bodies(source):
-        if language != "FBD":
-            continue
-        pous.append(
-            Pou(
-                name=pou_elem.get("name") or "<unnamed>",
-                pou_type=pou_elem.get("pouType") or "program",
-                language="FBD",
-                variables=parse_interface(find_child(pou_elem, "interface")),
-                networks=build_networks(parse_fbd_body(body)),
-            )
-        )
+        if language == LANGUAGE:
+            pous.append(pou_from_body(pou_elem, body))
     return pous

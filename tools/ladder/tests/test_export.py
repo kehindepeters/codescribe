@@ -114,6 +114,19 @@ try:
     check("sfc reports nothing rendered", graphical_export.write_rendered_text(sfc, sfc_base) is False)
     check("sfc writes no empty file", not os.path.exists(sfc_base + ".txt"))
 
+    # --- cost reporting -----------------------------------------------------
+
+    # The ScriptEngine can keep modules loaded between runs, so without an
+    # explicit reset the summary would report totals accumulated across every
+    # Export click since CODESYS started.
+    check_equal("one render is counted", graphical_export.STATS["rendered"], 1)
+    check_equal("the skipped sfc is counted", graphical_export.STATS["skipped"], 1)
+    check("the summary names both costs", "CODESYS export_xml" in graphical_export.summary())
+
+    graphical_export.reset_stats()
+    check_equal("reset clears the counts", graphical_export.STATS["rendered"], 0)
+    check_equal("nothing to report after a reset", graphical_export.summary(), None)
+
     # --- a rendering failure must not fail the export -----------------------
 
     broken_base = os.path.join(workspace, "BROKEN")

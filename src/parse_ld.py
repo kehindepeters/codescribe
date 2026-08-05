@@ -245,6 +245,25 @@ def build_rungs(nodes):
     return rungs
 
 
+LANGUAGE = "LD"
+
+
+def pou_from_body(pou_elem, body_elem):
+    """Build a Pou from an already-located <LD> body.
+
+    Split out from parse_pous so a caller handling several languages can make
+    a single pass over the document instead of re-reading and re-parsing it
+    once per language.
+    """
+    return Pou(
+        name=pou_elem.get("name") or "<unnamed>",
+        pou_type=pou_elem.get("pouType") or "program",
+        language=LANGUAGE,
+        variables=parse_interface(find_child(pou_elem, "interface")),
+        rungs=build_rungs(parse_ld_body(body_elem)),
+    )
+
+
 def parse_pous(source):
     """Parse every LD POU in a PLCopen file. Other languages are skipped.
 
@@ -252,14 +271,6 @@ def parse_pous(source):
     """
     pous = []
     for pou_elem, language, body in iter_bodies(source):
-        if language != "LD":
-            continue
-        pous.append(
-            Pou(
-                name=pou_elem.get("name") or "<unnamed>",
-                pou_type=pou_elem.get("pouType") or "program",
-                variables=parse_interface(find_child(pou_elem, "interface")),
-                rungs=build_rungs(parse_ld_body(body)),
-            )
-        )
+        if language == LANGUAGE:
+            pous.append(pou_from_body(pou_elem, body))
     return pous
