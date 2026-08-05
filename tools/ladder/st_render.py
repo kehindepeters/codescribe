@@ -11,7 +11,7 @@ power flow, so the condition carries on past it, which reads oddly in ST but
 matches what the rung does.
 """
 
-from ascii_render import render_declaration
+from ld_render import render_declaration
 from model import BLOCK, COIL, Assign, Call, Element, Series, Signal
 from parse import expr_to_text
 

@@ -7,19 +7,26 @@ Python 3 and the IronPython 2.7 that CODESYS embeds.
     python tools/ladder/tests/test_fbd.py
 """
 
-from __future__ import print_function
+from __future__ import print_function, unicode_literals
 
+import io
 import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 
+import charset  # noqa: E402
 import fbd_render  # noqa: E402
 import parse  # noqa: E402
 import parse_fbd  # noqa: E402
 import st_render  # noqa: E402
 from model import Call, Signal  # noqa: E402
+from render import write  # noqa: E402
+
+# Referenced through the charset table rather than as literal glyphs: this
+# source file has to stay pure ASCII for IronPython 2.7 to load it at all.
+U = charset.UNICODE
 
 FIXTURES = os.path.join(HERE, "fixtures", "codesys")
 FBD_SOURCE = os.path.join(FIXTURES, "FbTesting.xml")
@@ -42,16 +49,15 @@ def check_equal(name, actual, expected):
 
 
 def check_golden(name, rendered, golden_path):
-    handle = open(golden_path)
+    # Goldens hold box-drawing characters, so the encoding cannot be left to
+    # the platform default - and neither can printing them on a mismatch.
+    handle = io.open(golden_path, encoding="utf-8")
     try:
         expected = handle.read().replace("\r\n", "\n").rstrip("\n").split("\n")
     finally:
         handle.close()
     if rendered != expected:
-        print("--- expected ---")
-        print("\n".join(expected))
-        print("--- actual ---")
-        print("\n".join(rendered))
+        write(["--- expected ---"] + expected + ["--- actual ---"] + rendered)
     check_equal(name, rendered, expected)
 
 
@@ -111,9 +117,14 @@ check_equal("function block title includes it", tof.title, "TOF_0 : TOF")
 
 art = fbd_render.render_pou(pou)
 check("art: no trailing whitespace", all(line == line.rstrip() for line in art))
-check("art: boxes do not fuse together", not any("++" in line for line in art))
+check("art: boxes do not fuse together", not any(U["TR"] + U["TL"] in line for line in art))
 check("art: output assignment is drawn", any("uiOutVoltage => uiCurrSupplyVolt" in line for line in art))
-check("art: nested operator box is drawn", any("|In1   Out1|" in line for line in art))
+check("art: nested operator box is drawn", any(U["PIN_L"] + "In1   Out1" + U["PIN_R"] in line for line in art))
+
+# A tee marks a real connection, so an unconsumed output must leave the wall
+# unbroken. fbSupplySwitch is a network sink: nothing takes its xError.
+check("art: sink output is not teed", any("xError" + U["V"] in line for line in art))
+check("art: consumed output is teed", any("Out1" + U["PIN_R"] in line for line in art))
 
 # Every position in this export is x="0" y="0". If layout depended on those
 # coordinates the three boxes would land on top of each other, so finding each

@@ -11,16 +11,16 @@ VAR
 END_VAR
 
 (* Network 1 *)
-|    Start_PB    Stop_PB  Motor_Run
-|--+---| |-----+---|/|-------( )------|
-|  | Motor_Run |
-|  +----| |----+
+│    Start_PB    Stop_PB  Motor_Run
+├──┬───┤ ├─────┬───┤/├───────( )──────┤
+│  │ Motor_Run │
+│  └────┤ ├────┘
 
 (* Network 2 *)
-|   Fault_In  Fault_Latch
-|-----|P|---------(S)-------|
+│   Fault_In  Fault_Latch
+├─────┤P├─────────(S)───────┤
 
 (* Network 3 *)
-|   Reset_PB   Ack   Fault_Latch
-|-----| |------|/|-------(R)-------|
+│   Reset_PB   Ack   Fault_Latch
+├─────┤ ├──────┤/├───────(R)───────┤
 

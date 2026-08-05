@@ -123,12 +123,17 @@ class Call(object):
     exactly as exported; unlike LD there is no power pin to hoist.
     """
 
-    def __init__(self, type_name=None, instance_name=None, inputs=None, outputs=None, active_output=None):
+    def __init__(
+        self, type_name=None, instance_name=None, inputs=None, outputs=None, active_output=None, output_wired=False
+    ):
         self.type_name = type_name
         self.instance_name = instance_name
         self.inputs = inputs if inputs is not None else []
         self.outputs = outputs if outputs is not None else []
         self.active_output = active_output
+        # True when something downstream consumes the active output. A network
+        # sink has an active output but nothing to hand it to.
+        self.output_wired = output_wired
 
     @property
     def title(self):
@@ -190,6 +195,7 @@ class Element(object):
         input_pins=None,
         output_pins=None,
         active_output=None,
+        output_wired=False,
     ):
         self.kind = kind
         self.label = label
@@ -201,6 +207,9 @@ class Element(object):
         self.input_pins = input_pins if input_pins is not None else []
         self.output_pins = output_pins if output_pins is not None else []
         self.active_output = active_output
+        # True when something downstream actually consumes the active output,
+        # so the renderer knows whether to break the box edge with a tee.
+        self.output_wired = output_wired
 
     @property
     def title(self):

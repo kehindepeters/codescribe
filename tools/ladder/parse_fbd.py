@@ -90,6 +90,8 @@ def _build(node, by_id, visiting, via_pin=None):
             inputs=inputs,
             outputs=list(node.outputs),
             active_output=active,
+            # via_pin is set by the consumer; a network sink has none.
+            output_wired=via_pin is not None,
         )
 
     if node.kind == OUT_VARIABLE:

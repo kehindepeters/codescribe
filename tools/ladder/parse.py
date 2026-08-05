@@ -176,6 +176,9 @@ def _build_block(node, by_id, visiting, via_pin):
         input_pins=input_pins,
         output_pins=output_pins,
         active_output=active,
+        # via_pin is set by whatever consumed this block; a block terminating
+        # the rung has none.
+        output_wired=via_pin is not None,
     )
     return series([power_expr, element])
 

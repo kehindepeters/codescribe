@@ -1,5 +1,5 @@
 # REMEMBER: this must stay valid under IronPython 2.7 as well as Python 3.
-"""Render a parsed Ladder Diagram as ASCII rungs.
+"""Render a parsed Ladder Diagram as rungs.
 
 Layout comes from the expression tree only - the x/y coordinates in the source
 XML are deliberately ignored. Dragging a contact sideways in CODESYS must not
@@ -8,8 +8,14 @@ show up as a diff.
 Composition works on Blocks: a rectangle of text plus the row index its wire
 enters and leaves on. Series concatenates Blocks horizontally aligned on that
 row; Parallel stacks them and threads a junction column down each side.
+
+Drawing characters come from charset, so the same layout renders as either
+box-drawing Unicode or plain ASCII.
 """
 
+from __future__ import unicode_literals
+
+import charset
 from layout import Block
 from model import BLOCK, COIL, CONTACT, Element, Empty, Parallel, Series
 
@@ -22,29 +28,30 @@ POU_TYPE_KEYWORDS = {
 
 def _symbol_and_label(element):
     """The drawn symbol, and the caption sitting above it."""
+    chars = charset.active()
     kind = element.kind
 
     if kind == CONTACT:
         if element.edge == "rising":
-            symbol = "|P|"
+            middle = "P"
         elif element.edge == "falling":
-            symbol = "|N|"
+            middle = "N"
         elif element.negated:
-            symbol = "|/|"
+            middle = "/"
         else:
-            symbol = "| |"
-        return symbol, element.label or ""
+            middle = " "
+        return chars["CONTACT_L"] + middle + chars["CONTACT_R"], element.label or ""
 
     if kind == COIL:
         if element.storage == "set":
-            symbol = "(S)"
+            middle = "S"
         elif element.storage == "reset":
-            symbol = "(R)"
+            middle = "R"
         elif element.negated:
-            symbol = "(/)"
+            middle = "/"
         else:
-            symbol = "( )"
-        return symbol, element.label or ""
+            middle = " "
+        return "(" + middle + ")", element.label or ""
 
     if kind == "jump":
         return ">>" + (element.label or "?"), ""
@@ -60,21 +67,21 @@ def _symbol_and_label(element):
 def _render_block(element):
     """Draw a function block as a pin box.
 
-        TON_0 : TON
-       +-----------+
-    ---|IN        Q|---
-       |PT := T#5S |
-       +-----------+
-
     The power pin sorts first, so the wire enters and leaves on the same row.
+    Only pins that are genuinely wired get a tee on the box edge; a
+    parameterised or unconsumed pin leaves the wall unbroken.
     """
+    chars = charset.active()
+
     left = []
+    wired = []
     for pin, label in element.input_pins:
         text = pin or "?"
         # A label of None is the power pin - it is wired, not parameterised.
         if label is not None:
             text += " := " + label if label else ""
         left.append(text)
+        wired.append(label is None)
 
     right = []
     for pin, assigned in element.output_pins:
@@ -85,17 +92,21 @@ def _render_block(element):
 
     rows = max(len(left), len(right), 1)
     left += [""] * (rows - len(left))
+    wired += [False] * (rows - len(wired))
     right += [""] * (rows - len(right))
 
     title = element.title
     inner = max([len(title)] + [len(left[i]) + 3 + len(right[i]) for i in range(rows)])
 
     lines = [title.center(inner + 2)]
-    lines.append("+" + "-" * inner + "+")
+    lines.append(chars["TL"] + chars["H"] * inner + chars["TR"])
     for index in range(rows):
         gap = inner - len(left[index]) - len(right[index])
-        lines.append("|" + left[index] + " " * gap + right[index] + "|")
-    lines.append("+" + "-" * inner + "+")
+        left_edge = chars["PIN_L"] if wired[index] else chars["V"]
+        # Only the active output continues onward, and only if consumed.
+        right_edge = chars["PIN_R"] if (index == 0 and element.output_wired) else chars["V"]
+        lines.append(left_edge + left[index] + " " * gap + right[index] + right_edge)
+    lines.append(chars["BL"] + chars["H"] * inner + chars["BR"])
 
     # Row 0 is the title and row 1 the top border, so the first pin is row 2.
     connect_row = 2
@@ -104,7 +115,7 @@ def _render_block(element):
     # unreadable run of border characters.
     stubbed = []
     for index, line in enumerate(lines):
-        stub = "-" if index == connect_row else " "
+        stub = chars["H"] if index == connect_row else " "
         stubbed.append(stub + line + stub)
 
     return Block(stubbed, connect_row)
@@ -114,11 +125,12 @@ def _render_element(element):
     if element.kind == BLOCK:
         return _render_block(element)
 
+    chars = charset.active()
     symbol, label = _symbol_and_label(element)
     width = max(len(label) + 2, len(symbol) + 4)
 
     lead = (width - len(symbol)) // 2
-    symbol_line = "-" * lead + symbol + "-" * (width - len(symbol) - lead)
+    symbol_line = chars["H"] * lead + symbol + chars["H"] * (width - len(symbol) - lead)
 
     lead = (width - len(label)) // 2
     label_line = " " * lead + label + " " * (width - len(label) - lead)
@@ -147,6 +159,7 @@ def _render_series(items):
 
 
 def _render_parallel(branches):
+    chars = charset.active()
     blocks = [_render(branch) for branch in branches]
     width = max(block.width for block in blocks)
 
@@ -155,9 +168,9 @@ def _render_parallel(branches):
     for block in blocks:
         connect_rows.append(len(stacked) + block.connect_row)
         for index, line in enumerate(block.lines):
-            # The wire itself extends with dashes; everything else with spaces,
-            # so short branches still reach the junction on the right.
-            fill = "-" if index == block.connect_row else " "
+            # The wire itself extends horizontally; everything else with
+            # spaces, so short branches still reach the junction on the right.
+            fill = chars["H"] if index == block.connect_row else " "
             stacked.append(line + fill * (width - len(line)))
 
     junctions = set(connect_rows)
@@ -165,20 +178,26 @@ def _render_parallel(branches):
 
     lines = []
     for row, line in enumerate(stacked):
-        if row in junctions:
-            edge = "+"
+        if row == first:
+            # The main line carries straight on and drops a branch downward.
+            left, right = chars["T_DOWN"], chars["T_DOWN"]
+        elif row == last:
+            left, right = chars["BL"], chars["BR"]
+        elif row in junctions:
+            left, right = chars["T_RIGHT"], chars["T_LEFT"]
         elif first < row < last:
-            edge = "|"
+            left = right = chars["V"]
         else:
-            edge = " "
-        lines.append(edge + line + edge)
+            left = right = " "
+        lines.append(left + line + right)
 
     return Block(lines, first)
 
 
 def _render(expr):
+    chars = charset.active()
     if isinstance(expr, Empty):
-        return Block(["   ", "---"], 1)
+        return Block(["   ", chars["H"] * 3], 1)
     if isinstance(expr, Element):
         return _render_element(expr)
     if isinstance(expr, Series):
@@ -189,14 +208,15 @@ def _render(expr):
 
 
 def render_rung(expr):
-    """Render one rung, bounded by the left power rail."""
+    """Render one rung, bounded by the power rails."""
+    chars = charset.active()
     block = _render(expr)
     lines = []
     for row, line in enumerate(block.lines):
         if row == block.connect_row:
-            lines.append("|--" + line + "--|")
+            lines.append(chars["T_RIGHT"] + chars["H"] * 2 + line + chars["H"] * 2 + chars["T_LEFT"])
         else:
-            lines.append("|  " + line)
+            lines.append(chars["V"] + "  " + line)
     return lines
 
 

@@ -8,17 +8,20 @@ is destined for src/ once it is proven, and it has to pass there too.
     python tools/ladder/tests/test_ladder.py
 """
 
-from __future__ import print_function
+from __future__ import print_function, unicode_literals
 
+import io
 import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 
-from ascii_render import render_pou  # noqa: E402
+import charset  # noqa: E402
+from ld_render import render_pou  # noqa: E402
 from model import COIL, CONTACT, Element, Parallel, Series  # noqa: E402
 from parse import parse_pous  # noqa: E402
+from render import write  # noqa: E402
 
 FIXTURES = os.path.join(HERE, "fixtures")
 SOURCE = os.path.join(FIXTURES, "motor_control.plcopen.xml")
@@ -85,8 +88,11 @@ check_equal("reset coil storage", rung3.items[2].storage, "reset")
 
 # --- layout independence ---------------------------------------------------
 
-with open(SOURCE) as handle:
+handle = io.open(SOURCE, encoding="utf-8")
+try:
     source_text = handle.read()
+finally:
+    handle.close()
 
 # Shifting every element 500px right must not change a single character of
 # output. This is the property that keeps diffs meaningful.
@@ -110,23 +116,49 @@ rendered = render_pou(pou)
 
 check("no trailing whitespace", all(line == line.rstrip() for line in rendered))
 check("declaration comes first", rendered[0] == "PROGRAM Motor_Control")
-check("seal-in branch is drawn", any("+----| |----+" in line for line in rendered))
-check("negated contact is drawn", any("|/|" in line for line in rendered))
-check("rising edge contact is drawn", any("|P|" in line for line in rendered))
+
+# Referenced through the charset table rather than as literal glyphs: this
+# source file has to stay pure ASCII for IronPython 2.7 to load it at all.
+U = charset.UNICODE
+
+# The seal-in branch closes on its own row: a bottom-left corner, a contact,
+# and a bottom-right corner. Matching the shape rather than an exact wire
+# length keeps this from breaking every time a variable is renamed.
+branch_rows = [line for line in rendered if U["BL"] in line and U["BR"] in line]
+check_equal("exactly one branch closes", len(branch_rows), 1)
+check("seal-in branch holds a contact", U["CONTACT_L"] in branch_rows[0])
+check("branch opens with a tee", any(U["T_DOWN"] in line for line in rendered))
+check("negated contact is drawn", any(U["CONTACT_L"] + "/" + U["CONTACT_R"] in line for line in rendered))
+check("rising edge contact is drawn", any(U["CONTACT_L"] + "P" + U["CONTACT_R"] in line for line in rendered))
 check("set coil is drawn", any("(S)" in line for line in rendered))
 check("reset coil is drawn", any("(R)" in line for line in rendered))
 
+
+# --- character sets --------------------------------------------------------
+
+# The ASCII set exists for terminals and diff viewers that mangle box drawing,
+# so its defining property is that nothing in the output is non-ASCII.
+charset.use("ascii")
+try:
+    ascii_rendered = render_pou(pou)
+finally:
+    charset.use("unicode")
+
+check("ascii charset emits no non-ASCII", all(ord(ch) < 128 for line in ascii_rendered for ch in line))
+check("ascii charset still draws the branch", any("+----| |----+" in line for line in ascii_rendered))
+check("unicode is restored afterwards", any(U["V"] in line for line in render_pou(pou)))
+check_equal("both charsets produce the same shape", len(ascii_rendered), len(rendered))
+
 def check_golden(name, rendered_lines, golden_path):
-    handle = open(golden_path)
+    # Goldens hold box-drawing characters, so the encoding cannot be left to
+    # the platform default - and neither can printing them on a mismatch.
+    handle = io.open(golden_path, encoding="utf-8")
     try:
         expected_lines = handle.read().replace("\r\n", "\n").rstrip("\n").split("\n")
     finally:
         handle.close()
     if rendered_lines != expected_lines:
-        print("--- expected ---")
-        print("\n".join(expected_lines))
-        print("--- actual ---")
-        print("\n".join(rendered_lines))
+        write(["--- expected ---"] + expected_lines + ["--- actual ---"] + rendered_lines)
     check_equal(name, rendered_lines, expected_lines)
 
 

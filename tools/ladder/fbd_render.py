@@ -7,8 +7,11 @@ by another block gets that block's whole box beside it. Pin rows are placed at
 whatever row their source ended up on, which keeps every wire horizontal.
 """
 
-from ascii_render import render_declaration
+from __future__ import unicode_literals
+
+import charset
 from layout import Block, stack
+from ld_render import render_declaration
 from model import Assign, Call, Signal
 
 
@@ -17,9 +20,10 @@ def _render_signal(node):
 
 
 def _render_assign(node):
+    chars = charset.active()
     source = _render(node.source) if node.source is not None else Block([""], 0)
     lines = source.padded(source.width)
-    tail = "---> " + (node.label or "?")
+    tail = chars["H"] * 3 + "> " + (node.label or "?")
     out = []
     for index, line in enumerate(lines):
         out.append(line + tail if index == source.connect_row else line)
@@ -38,6 +42,7 @@ def _is_wired(source):
 
 
 def _render_call(call):
+    chars = charset.active()
     input_blocks = []
     for _pin, source in call.inputs:
         input_blocks.append(_render(source) if source is not None else Block([""], 0))
@@ -56,7 +61,7 @@ def _render_call(call):
 
     left = []
     for index, line in enumerate(left_lines):
-        fill = "-" if index in handoff else " "
+        fill = chars["H"] if index in handoff else " "
         left.append(line + fill * (left_width - len(line)))
 
     input_rows = list(pin_rows)
@@ -103,16 +108,34 @@ def _render_call(call):
     height = max(len(left), box_last + 2)
     left += [" " * left_width] * (height - len(left))
 
+    # handoff was computed before the shift; recompute against the final rows.
+    handoff_pins = set()
+    for index, pin_and_source in enumerate(call.inputs):
+        if _is_wired(pin_and_source[1]):
+            handoff_pins.add(input_rows[index])
+
+    # The active output only breaks the box wall with a tee if a consumer is
+    # actually there to receive it.
+    pins = [pin for pin, _assigned in call.outputs]
+    live_output_row = None
+    if call.output_wired and call.active_output in pins:
+        live_output_row = output_rows[pins.index(call.active_output)]
+
     lines = []
     for row in range(height):
         if row == box_first - 2:
             box = title.center(inner + 2)
-        elif row == box_first - 1 or row == box_last + 1:
-            box = "+" + "-" * inner + "+"
+        elif row == box_first - 1:
+            box = chars["TL"] + chars["H"] * inner + chars["TR"]
+        elif row == box_last + 1:
+            box = chars["BL"] + chars["H"] * inner + chars["BR"]
         elif box_first <= row <= box_last:
             left_pin = in_at.get(row, "")
             right_pin = out_at.get(row, "")
-            box = "|" + left_pin + " " * (inner - len(left_pin) - len(right_pin)) + right_pin + "|"
+            left_edge = chars["PIN_L"] if row in handoff_pins else chars["V"]
+            right_edge = chars["PIN_R"] if row == live_output_row else chars["V"]
+            gap = inner - len(left_pin) - len(right_pin)
+            box = left_edge + left_pin + " " * gap + right_pin + right_edge
         else:
             box = " " * (inner + 2)
         lines.append(left[row] + box)

@@ -6,6 +6,10 @@ Renderers build small Blocks for leaves and compose them; nothing else needs
 to know about absolute coordinates.
 """
 
+from __future__ import unicode_literals
+
+import charset
+
 
 class Block(object):
     def __init__(self, lines, connect_row):
@@ -18,19 +22,20 @@ class Block(object):
             return 0
         return max(len(line) for line in self.lines)
 
-    def padded(self, width, wire_rows=None):
-        """Lines padded to ``width``, extending wires with dashes.
+    def padded(self, width, wire_rows=None, fill=None):
+        """Lines padded to ``width``, extending wires horizontally.
 
         Rows listed in ``wire_rows`` (defaulting to this Block's own connect
-        row) are filled with dashes so a short branch still reaches the
-        junction on its right. Every other row is filled with spaces.
+        row) are filled with the wire character so a short branch still reaches
+        the junction on its right. Every other row is filled with spaces.
         """
         if wire_rows is None:
             wire_rows = set([self.connect_row])
+        if fill is None:
+            fill = charset.active()["H"]
         out = []
         for index, line in enumerate(self.lines):
-            fill = "-" if index in wire_rows else " "
-            out.append(line + fill * (width - len(line)))
+            out.append(line + (fill if index in wire_rows else " ") * (width - len(line)))
         return out
 
 
