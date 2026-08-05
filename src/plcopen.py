@@ -110,6 +110,25 @@ def block_outputs(block_elem):
     return outputs
 
 
+def block_st_code(block_elem):
+    """Inline ST carried by an EXECUTE box, as a list of lines.
+
+    CODESYS puts the whole body of an EXECUTE box in an addData STCode
+    element. It is the only content the box has, so ignoring it draws an empty
+    box where a dozen lines of logic should be.
+    """
+    add_data = find_child(block_elem, "addData")
+    if add_data is None:
+        return []
+    for data in add_data:
+        if tag(data) != "data":
+            continue
+        code = find_child(data, "STCode")
+        if code is not None and code.text:
+            return code.text.replace("\r\n", "\n").strip("\n").split("\n")
+    return []
+
+
 def comment_text(elem):
     """The text of a <comment>, which nests its content in an xhtml element."""
     content = find_child(elem, "content")

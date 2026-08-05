@@ -12,7 +12,7 @@ matches what the rung does.
 """
 
 from ld_render import render_declaration
-from model import BLOCK, COIL, Assign, Call, Element, Series, Signal
+from model import BLOCK, COIL, Assign, Call, Element, Jump, Label, Series, Signal
 from parse_ld import expr_to_text
 
 
@@ -55,13 +55,63 @@ def rung_to_statements(rung):
     return statements
 
 
+# Operators CODESYS draws as boxes but everyone reads as infix. A conversion
+# like REAL_TO_UINT is left as a call, because that is how it reads in ST too.
+INFIX_OPERATORS = {
+    "AND": "AND",
+    "OR": "OR",
+    "XOR": "XOR",
+    "ADD": "+",
+    "SUB": "-",
+    "MUL": "*",
+    "DIV": "/",
+    "MOD": "MOD",
+    "GT": ">",
+    "GE": ">=",
+    "LT": "<",
+    "LE": "<=",
+    "EQ": "=",
+    "NE": "<>",
+}
+
+
+def _operand(text):
+    """Parenthesise anything that is not a single term.
+
+    Redundant brackets are preferable to an expression that reads correctly
+    but groups wrongly.
+    """
+    return ("(" + text + ")") if " " in text else text
+
+
+def _operator_expression(node, values):
+    symbol = INFIX_OPERATORS.get(node.type_name)
+    if symbol and len(values) >= 2:
+        return (" " + symbol + " ").join(_operand(value) for value in values)
+    if node.type_name == "NOT" and len(values) == 1:
+        return "NOT " + _operand(values[0])
+    return "%s(%s)" % (node.type_name or "?", ", ".join(values))
+
+
 def _fbd_value(node, statements):
     """Value of a node as ST text, appending any statements it needs first."""
     if node is None:
         return ""
 
     if isinstance(node, Signal):
-        return node.label or ""
+        return node.text
+
+    if isinstance(node, Label):
+        statements.append("(* label: %s *)" % node.name)
+        return ""
+
+    if isinstance(node, Jump):
+        condition = _fbd_value(node.condition, statements)
+        if condition:
+            statements.append("IF %s THEN (* JMP %s *) END_IF" % (condition, node.target))
+        else:
+            statements.append("(* JMP %s *)" % node.target)
+        return ""
 
     if isinstance(node, Assign):
         value = _fbd_value(node.source, statements)
@@ -75,10 +125,22 @@ def _fbd_value(node, statements):
             if value:
                 pairs.append((pin, value))
 
+        if node.st_code:
+            # An EXECUTE box is inline ST already, so emit it as itself rather
+            # than as a call to a box that has no body.
+            guard = dict(pairs).get("EN")
+            if guard and guard != "TRUE":
+                statements.append("IF %s THEN" % guard)
+                statements.extend("    " + line for line in node.st_code)
+                statements.append("END_IF")
+            else:
+                statements.extend(node.st_code)
+            return ""
+
         if node.is_operator:
             # Operators and functions have no instance to call, so they inline
-            # as a positional expression rather than a statement.
-            return "%s(%s)" % (node.type_name or "?", ", ".join(value for _pin, value in pairs))
+            # as an expression rather than a statement.
+            return _operator_expression(node, [value for _pin, value in pairs])
 
         name = node.instance_name
         statements.append("%s(%s);" % (name, ", ".join("%s := %s" % (pin, value) for pin, value in pairs)))

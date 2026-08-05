@@ -154,7 +154,7 @@ SWITCH_CALL = "fbSupplySwitch(eMode := ifmIOcommon.MODE_SUPPLY_SWITCH.SYS_SUPPLY
 
 check("st: function block becomes a call statement", SUPPLY_CALL in fbd_st)
 check("st: output assignment becomes its own statement", "uiCurrSupplyVolt := fbSystemSupply.uiOutVoltage;" in fbd_st)
-check("st: operator inlines positionally", "TOF_0(IN := GT(uiCurrSupplyVolt, uiMinVoltage), PT := T#5S);" in fbd_st)
+check("st: comparison operator inlines infix", "TOF_0(IN := uiCurrSupplyVolt > uiMinVoltage, PT := T#5S);" in fbd_st)
 check("st: nested output is referenced by pin", SWITCH_CALL in fbd_st)
 check("st: unwired pin is omitted", not any("eFilter" in line for line in fbd_st))
 
@@ -168,6 +168,49 @@ check("st: block chains through its output pin", "CTU_0(CU := TON_0.Q, RESET := 
 check("st: reset coil becomes a conditional", "IF CTU_0.Q THEN PowerOff := FALSE; END_IF" in ld_st)
 
 check_golden("st: LD golden matches", ld_st, os.path.join(FIXTURES, "LDTesting.st.expected.txt"))
+
+# --- control flow ----------------------------------------------------------
+
+# Everything below was silently dropped before, which is worse than failing:
+# the rendering looked complete while a guard clause and a body of inline ST
+# were simply absent.
+CONTROL_FLOW = os.path.join(HERE, "fixtures", "fbd_control_flow.plcopen.xml")
+flow = parse_fbd.parse_pous(CONTROL_FLOW)[0]
+flow_st = st_render.render_pou(flow)
+flow_art = fbd_render.render_pou(flow)
+
+check_equal("flow: four networks survive", len(flow.networks), 4)
+
+# A jump terminates a network. Leaving it out of SINK_KINDS dropped the entire
+# guard network, because nothing else consumed the OR feeding it.
+check("flow: the guard network is not dropped", any("JMP END" in line for line in flow_st))
+check("flow: the jump condition is kept", any("Mode.Current = Mode.ESTOP" in line for line in flow_st))
+check("flow: the jump target is drawn", any(">> END" in line for line in flow_art))
+check("flow: the label is shown", any("(* label: END *)" in line for line in flow_st))
+
+# negated="true" on an inVariable inverts the logic if it is ignored.
+guard = flow.networks[0][1]
+check_equal("flow: negation reaches the tree", guard.condition.inputs[0][1].negated, True)
+check_equal("flow: negation renders", guard.condition.inputs[0][1].text, "NOT xInitDone")
+check("flow: negation survives into ST", any("(NOT xInitDone) OR" in line for line in flow_st))
+
+# An EXECUTE box is nothing but inline ST; drawing the box alone loses it all.
+execute = flow.networks[3][1]
+check_equal("flow: inline ST is captured", len(execute.st_code), 4)
+check("flow: inline ST reaches the ST output", any("Status.Faulted := FALSE;" in line for line in flow_st))
+# The EN pin genuinely guards the box, so it has to show up as a condition
+# rather than being dropped for looking redundant.
+check("flow: the EN guard wraps the inline ST", any(line == "IF xInitDone THEN" for line in flow_st))
+check("flow: inline ST reaches the diagram", any("Status.Faulted := FALSE;" in line for line in flow_art))
+
+# Operators read as operators, not as function calls.
+check("flow: arithmetic inlines infix", any("RawPressure / 100" in line for line in flow_st))
+check("flow: conversions stay function calls", any("REAL_TO_UINT(" in line for line in flow_st))
+check(
+    "flow: compound operands are bracketed",
+    any("(NOT xInitDone) OR (Mode.Current = Mode.ESTOP)" in line for line in flow_st),
+)
+
 
 # --- language dispatch -----------------------------------------------------
 

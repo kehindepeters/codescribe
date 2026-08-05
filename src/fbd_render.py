@@ -12,11 +12,28 @@ from __future__ import unicode_literals
 import charset
 from layout import Block, stack
 from ld_render import render_declaration
-from model import Assign, Call, Signal
+from model import Assign, Call, Jump, Label, Signal
 
 
 def _render_signal(node):
-    return Block([node.label or ""], 0)
+    return Block([node.text], 0)
+
+
+def _render_label(node):
+    return Block(["(* label: " + node.name + " *)"], 0)
+
+
+def _render_jump(node):
+    chars = charset.active()
+    tail = chars["H"] * 3 + ">> " + (node.target or "?")
+    if node.condition is None:
+        return Block([tail], 0)
+    source = _render(node.condition)
+    lines = source.padded(source.width)
+    out = []
+    for index, line in enumerate(lines):
+        out.append(line + tail if index == source.connect_row else line)
+    return Block(out, source.connect_row)
 
 
 def _render_assign(node):
@@ -156,13 +173,22 @@ def _render(node):
         return _render_call(node)
     if isinstance(node, Assign):
         return _render_assign(node)
+    if isinstance(node, Jump):
+        return _render_jump(node)
+    if isinstance(node, Label):
+        return _render_label(node)
     if isinstance(node, Signal):
         return _render_signal(node)
     raise TypeError("cannot render %r" % (node,))
 
 
 def render_network(tree):
-    return _render(tree).lines
+    lines = _render(node=tree).lines
+    # An EXECUTE box's body is the logic; drawing the box without it would be
+    # an empty rectangle where a dozen lines of ST should be.
+    if isinstance(tree, Call) and tree.st_code:
+        lines = lines + [""] + ["    " + line for line in tree.st_code]
+    return lines
 
 
 def render_pou(pou):

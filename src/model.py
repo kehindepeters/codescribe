@@ -60,7 +60,9 @@ class Node(object):
         type_name=None,
         instance_name=None,
         outputs=None,
+        st_code=None,
     ):
+        self.st_code = st_code if st_code is not None else []  # blocks only: inline ST
         self.local_id = local_id
         self.kind = kind
         self.label = label
@@ -106,13 +108,43 @@ class Pou(object):
 
 
 class Signal(object):
-    """A named value entering a network: a variable, a literal, or nothing."""
+    """A named value entering a network: a variable, a literal, or nothing.
 
-    def __init__(self, label):
+    CODESYS can negate an inVariable in place, which is easy to miss and
+    inverts the logic if it is dropped.
+    """
+
+    def __init__(self, label, negated=False):
         self.label = label
+        self.negated = negated
+
+    @property
+    def text(self):
+        return ("NOT " + (self.label or "")) if self.negated else (self.label or "")
 
     def __repr__(self):
-        return "Signal(%r)" % (self.label,)
+        return "Signal(%r, negated=%r)" % (self.label, self.negated)
+
+
+class Jump(object):
+    """A conditional jump to a label. Terminates its network."""
+
+    def __init__(self, target, condition=None):
+        self.target = target
+        self.condition = condition
+
+    def __repr__(self):
+        return "Jump(%r)" % (self.target,)
+
+
+class Label(object):
+    """A jump target. Marks a point in the network order, carries no logic."""
+
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return "Label(%r)" % (self.name,)
 
 
 class Call(object):
@@ -124,13 +156,23 @@ class Call(object):
     """
 
     def __init__(
-        self, type_name=None, instance_name=None, inputs=None, outputs=None, active_output=None, output_wired=False
+        self,
+        type_name=None,
+        instance_name=None,
+        inputs=None,
+        outputs=None,
+        active_output=None,
+        output_wired=False,
+        st_code=None,
     ):
         self.type_name = type_name
         self.instance_name = instance_name
         self.inputs = inputs if inputs is not None else []
         self.outputs = outputs if outputs is not None else []
         self.active_output = active_output
+        # An EXECUTE box carries inline ST as its whole body. Dropping it loses
+        # the logic entirely while still drawing a plausible-looking box.
+        self.st_code = st_code if st_code is not None else []
         # True when something downstream consumes the active output. A network
         # sink has an active output but nothing to hand it to.
         self.output_wired = output_wired

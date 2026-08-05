@@ -6,14 +6,16 @@ looking for sinks nothing else consumes - but the result is a tree of calls
 rather than a series/parallel chain.
 """
 
-from model import BLOCK, Assign, Call, Node, Pou, Signal
+from model import BLOCK, Assign, Call, Jump, Label, Node, Pou, Signal
 from plcopen import (
     block_connections,
     block_outputs,
+    block_st_code,
     child_text,
     comment_text,
     direct_connections,
     find_child,
+    is_true,
     iter_bodies,
     parse_interface,
     tag,
@@ -22,13 +24,18 @@ from plcopen import (
 COMMENT = "comment"
 IN_VARIABLE = "inVariable"
 OUT_VARIABLE = "outVariable"
+JUMP = "jump"
+LABEL = "label"
+RETURN = "return"
 
 # vendorElement carries CODESYS editor state (network titles, implementation
 # attributes) and holds no logic, so it is skipped entirely.
-FBD_KINDS = (BLOCK, IN_VARIABLE, OUT_VARIABLE, COMMENT, "jump", "return", "label", "continuation", "connector")
+FBD_KINDS = (BLOCK, IN_VARIABLE, OUT_VARIABLE, COMMENT, JUMP, RETURN, LABEL, "continuation", "connector")
 
-# Elements that can terminate a network.
-SINK_KINDS = (BLOCK, OUT_VARIABLE)
+# Elements that can terminate a network. A jump or return ends one just as
+# surely as an assignment does - leaving them out drops the entire guard
+# network they belong to, silently.
+SINK_KINDS = (BLOCK, OUT_VARIABLE, JUMP, RETURN, LABEL)
 
 
 def parse_fbd_body(body_elem):
@@ -49,20 +56,24 @@ def parse_fbd_body(body_elem):
         is_block = kind == BLOCK
         if is_block:
             label = child.get("instanceName") or child.get("typeName")
+        elif kind in (JUMP, LABEL):
+            # Both carry their target in a "label" attribute, not a child.
+            label = child.get("label")
         else:
             label = child_text(child, "expression")
 
-        nodes.append(
-            Node(
-                local_id=local_id,
-                kind=kind,
-                label=label,
-                inputs=block_connections(child) if is_block else direct_connections(child),
-                type_name=child.get("typeName") if is_block else None,
-                instance_name=child.get("instanceName") if is_block else None,
-                outputs=block_outputs(child) if is_block else None,
-            )
+        node = Node(
+            local_id=local_id,
+            kind=kind,
+            label=label,
+            negated=is_true(child, "negated"),
+            inputs=block_connections(child) if is_block else direct_connections(child),
+            type_name=child.get("typeName") if is_block else None,
+            instance_name=child.get("instanceName") if is_block else None,
+            outputs=block_outputs(child) if is_block else None,
+            st_code=block_st_code(child) if is_block else None,
         )
+        nodes.append(node)
     return nodes
 
 
@@ -92,18 +103,24 @@ def _build(node, by_id, visiting, via_pin=None):
             active_output=active,
             # via_pin is set by the consumer; a network sink has none.
             output_wired=via_pin is not None,
+            st_code=list(node.st_code),
         )
 
-    if node.kind == OUT_VARIABLE:
+    if node.kind in (OUT_VARIABLE, JUMP, RETURN):
         source = None
         for connection in node.inputs:
             upstream = by_id.get(connection.ref_id)
             if upstream is not None:
                 source = _build(upstream, by_id, visiting, connection.source_pin)
                 break
-        return Assign(node.label or "?", source)
+        if node.kind == OUT_VARIABLE:
+            return Assign(node.label or "?", source)
+        return Jump(node.label or ("RETURN" if node.kind == RETURN else "?"), source)
 
-    return Signal(node.label or "")
+    if node.kind == LABEL:
+        return Label(node.label or "?")
+
+    return Signal(node.label or "", negated=node.negated)
 
 
 def build_networks(nodes):

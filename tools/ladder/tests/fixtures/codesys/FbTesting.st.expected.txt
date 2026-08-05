@@ -14,6 +14,6 @@ fbSystemSupply(eChannel := ifmIOcommon.SYS_VOLTAGE_CHANNEL.VBB15, eMode := ifmIO
 uiCurrSupplyVolt := fbSystemSupply.uiOutVoltage;
 
 (* Network 2: Safely power off PLC when ignition (VBB15) is lower than 5V for more than 10s. Enable timer on falling edge *)
-TOF_0(IN := GT(uiCurrSupplyVolt, uiMinVoltage), PT := T#5S);
+TOF_0(IN := uiCurrSupplyVolt > uiMinVoltage, PT := T#5S);
 fbSupplySwitch(eMode := ifmIOcommon.MODE_SUPPLY_SWITCH.SYS_SUPPLY_SWITCH, xValue := TOF_0.Q);
 
