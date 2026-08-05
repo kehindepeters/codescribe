@@ -15,12 +15,15 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# The renderers live in src/ so CODESYS can load them; tools/ladder keeps only
+# the dev CLI and these tests.
+sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "src"))
 sys.path.insert(0, os.path.join(HERE, ".."))
 
 import charset  # noqa: E402
 from ld_render import render_pou  # noqa: E402
 from model import COIL, CONTACT, Element, Parallel, Series  # noqa: E402
-from parse import parse_pous  # noqa: E402
+from parse_ld import parse_pous  # noqa: E402
 from render import write  # noqa: E402
 
 FIXTURES = os.path.join(HERE, "fixtures")

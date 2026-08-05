@@ -61,6 +61,35 @@ Items are exported in formatted structured text (`.st`) where possible, and in n
 
 Actions and Transitions export as `.st` with the kind encoded in the filename (`MyPou.MyAction.action.st`, `MyPou.MyTransition.transition.st`). The file contains the implementation text only, as these objects have no textual declaration.
 
+### Reading graphical POUs
+
+Ladder and Function Block Diagram POUs have no textual implementation, so they export as native xml that git can store but nobody can review. Alongside that xml, CODESCRIBE writes a `.txt` holding the equivalent Structured Text followed by a diagram:
+
+```
+(* Network 2 *)
+TON_0(IN := PowerOn, PT := T#5S);
+CTU_0(CU := TON_0.Q, RESET := PowerOff, PV := 10);
+IF CTU_0.Q THEN PowerOff := FALSE; END_IF
+
+(* Network 2 *)
+│               TON_0 : TON           CTU_0 : CTU
+│   PowerOn  ┌───────────────┐  ┌──────────────────────┐  PowerOff
+├─────┤ ├────┤IN            Q├──┤CU                   Q├────(R)──────┤
+│            │PT := T#5S   ET│  │RESET := PowerOff   CV│
+│            └───────────────┘  │PV := 10              │
+│                               └──────────────────────┘
+```
+
+This file is **derived and read-only**. The native xml remains the only thing `Import From Files` reads, so editing the `.txt` changes nothing — it exists to make diffs and code review possible. Layout comes from how the elements are wired, not from their coordinates, so moving a block in the CODESYS editor produces no diff.
+
+SFC and CFC POUs are not yet rendered; they export as native xml alone.
+
+To render an exported PLCopen file by hand, or to get plain ASCII instead of box drawing:
+
+```
+python tools/ladder/render.py --format st --charset ascii MyPou.xml
+```
+
 Visualisations export as `<name>.vis.xml`, so a `Main` visualisation cannot collide with a `Main` POU.
 
 Exports made with older versions of CODESCRIBE use different filenames for some of these objects; they still import correctly, and re-exporting once migrates the tracked files. See [CHANGELOG.md](CHANGELOG.md) for the details.

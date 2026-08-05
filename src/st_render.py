@@ -13,7 +13,7 @@ matches what the rung does.
 
 from ld_render import render_declaration
 from model import BLOCK, COIL, Assign, Call, Element, Series, Signal
-from parse import expr_to_text
+from parse_ld import expr_to_text
 
 
 def _coil_statement(coil, condition):

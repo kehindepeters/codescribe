@@ -22,12 +22,14 @@ from __future__ import print_function, unicode_literals
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+# The renderers live in src/, alongside the CODESYS export scripts.
+sys.path.insert(0, os.path.join(HERE, "..", "..", "src"))
 
 import charset  # noqa: E402
 import fbd_render  # noqa: E402
 import ld_render  # noqa: E402
-import parse  # noqa: E402
+import parse_ld  # noqa: E402
 import parse_fbd  # noqa: E402
 import st_render  # noqa: E402
 
@@ -37,7 +39,7 @@ FORMATS = ("art", "st", "both")
 def _pous(path):
     """Every graphical POU in the file, paired with its art renderer."""
     found = []
-    for pou in parse.parse_pous(path):
+    for pou in parse_ld.parse_pous(path):
         found.append((pou, ld_render))
     for pou in parse_fbd.parse_pous(path):
         found.append((pou, fbd_render))

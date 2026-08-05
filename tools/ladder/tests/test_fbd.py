@@ -14,11 +14,14 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# The renderers live in src/ so CODESYS can load them; tools/ladder keeps only
+# the dev CLI and these tests.
+sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "src"))
 sys.path.insert(0, os.path.join(HERE, ".."))
 
 import charset  # noqa: E402
 import fbd_render  # noqa: E402
-import parse  # noqa: E402
+import parse_ld  # noqa: E402
 import parse_fbd  # noqa: E402
 import st_render  # noqa: E402
 from model import Call, Signal  # noqa: E402
@@ -157,7 +160,7 @@ check("st: unwired pin is omitted", not any("eFilter" in line for line in fbd_st
 
 check_golden("st: FBD golden matches", fbd_st, os.path.join(FIXTURES, "FbTesting.st.expected.txt"))
 
-ld_pou = parse.parse_pous(LD_SOURCE)[0]
+ld_pou = parse_ld.parse_pous(LD_SOURCE)[0]
 ld_st = st_render.render_pou(ld_pou)
 check("st: parallel branch becomes OR", "IF (Sensor1 OR sensor3) AND NOT Sensor2 THEN PowerOn := TRUE; END_IF" in ld_st)
 check("st: ladder block becomes a call", "TON_0(IN := PowerOn, PT := T#5S);" in ld_st)
@@ -168,9 +171,9 @@ check_golden("st: LD golden matches", ld_st, os.path.join(FIXTURES, "LDTesting.s
 
 # --- language dispatch -----------------------------------------------------
 
-check_equal("LD parser ignores FBD bodies", parse.parse_pous(FBD_SOURCE), [])
+check_equal("LD parser ignores FBD bodies", parse_ld.parse_pous(FBD_SOURCE), [])
 check_equal("FBD parser ignores LD bodies", parse_fbd.parse_pous(LD_SOURCE), [])
-check_equal("SFC is skipped by both", parse.parse_pous(SFC_SOURCE) + parse_fbd.parse_pous(SFC_SOURCE), [])
+check_equal("SFC is skipped by both", parse_ld.parse_pous(SFC_SOURCE) + parse_fbd.parse_pous(SFC_SOURCE), [])
 
 print("")
 if failures:
