@@ -23,6 +23,7 @@ from model import (
     Parallel,
     Pou,
     Series,
+    is_simple_term,
     parallel,
     series,
 )
@@ -128,7 +129,12 @@ def expr_to_text(expr):
     if isinstance(expr, Element):
         if expr.kind == BLOCK:
             base = expr.instance_name or expr.type_name or "?"
-            return base + "." + expr.active_output if expr.active_output else base
+            text = (base + "." + expr.active_output) if expr.active_output else base
+            # The negation bubble on the consumed output inverts what leaves
+            # the box - on this flattened path just like on the power flow.
+            if expr.active_output in expr.negated_outputs:
+                return "NOT " + text
+            return text
         label = expr.label or ""
         if expr.edge == "rising":
             return "R(" + label + ")"
@@ -143,12 +149,13 @@ def expr_to_text(expr):
 def _bracket(text):
     """Parenthesise a compound term before negating or nesting it.
 
-    NOT binds tighter than OR/AND in IEC 61131-3, so "NOT xA OR xB" regroups
-    the logic that "NOT (xA OR xB)" states.
+    NOT binds above OR, AND and even comparison in IEC 61131-3, so both
+    "NOT xA OR xB" and the spaceless "NOT iCount>5" regroup the logic their
+    bracketed forms state.
     """
-    if " " in text:
-        return "(" + text + ")"
-    return text
+    if is_simple_term(text):
+        return text
+    return "(" + text + ")"
 
 
 def _build_block(node, by_id, visiting, via_pin):

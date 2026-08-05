@@ -12,6 +12,21 @@ Two layers live here:
   CODESYS editor does not churn the diff.
 """
 
+import re
+
+# A bare identifier, member access or literal - something safe to negate or
+# nest without brackets. Anything else (operators, calls, spaces) must be
+# parenthesised: expressions are free-form ST, often typed without spaces,
+# and NOT binds above comparison in IEC 61131-3, so "NOT iCount>5" states
+# "(NOT iCount)>5". The % covers direct addresses like %IX0.0.
+_SIMPLE_TERM = re.compile(r"^[A-Za-z0-9_.#%]+$")
+
+
+def is_simple_term(text):
+    """True when text can be negated or nested without changing its grouping."""
+    return _SIMPLE_TERM.match(text) is not None
+
+
 # Element kinds we understand. Anything else is carried through as an opaque
 # element so unknown logic is visibly wrong rather than silently missing.
 LEFT_RAIL = "leftPowerRail"
@@ -133,11 +148,11 @@ class Signal(object):
         label = self.label or ""
         if not self.negated:
             return label
-        # NOT binds tighter than OR/AND in IEC 61131-3, so a compound
-        # expression must keep its parentheses or the logic regroups.
-        if " " in label:
-            return "NOT (" + label + ")"
-        return "NOT " + label
+        # A compound expression must keep its parentheses or the logic
+        # regroups - see is_simple_term for the precedence trap.
+        if is_simple_term(label):
+            return "NOT " + label
+        return "NOT (" + label + ")"
 
     def __repr__(self):
         return "Signal(%r, negated=%r)" % (self.label, self.negated)

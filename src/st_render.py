@@ -12,7 +12,22 @@ matches what the rung does.
 """
 
 from ld_render import render_declaration
-from model import BLOCK, COIL, JUMP, LABEL, OUT_VARIABLE, RETURN, Assign, Call, Element, Jump, Label, Series, Signal
+from model import (
+    BLOCK,
+    COIL,
+    JUMP,
+    LABEL,
+    OUT_VARIABLE,
+    RETURN,
+    Assign,
+    Call,
+    Element,
+    Jump,
+    Label,
+    Series,
+    Signal,
+    is_simple_term,
+)
 from parse_ld import expr_to_text
 
 
@@ -40,9 +55,11 @@ def rung_to_statements(rung):
             for pin, label in item.input_pins:
                 # A label of None is the power pin, fed by the rung so far.
                 value = condition if label is None else label
-                if label is None and item.power_negated and value:
-                    # The negation bubble on the power pin itself.
-                    value = "NOT " + _operand(value)
+                if label is None and item.power_negated:
+                    # The negation bubble on the power pin itself. A bare
+                    # rail feed has no condition, but the inversion must
+                    # still be stated or the ST reads as un-negated.
+                    value = "NOT " + _operand(value) if value else "NOT TRUE"
                 if value:
                     args.append("%s := %s" % (pin, value))
             name = item.instance_name or item.type_name or "?"
@@ -110,9 +127,10 @@ def _operand(text):
     """Parenthesise anything that is not a single term.
 
     Redundant brackets are preferable to an expression that reads correctly
-    but groups wrongly.
+    but groups wrongly - and "iCount>5" is as compound as "xA OR xB", see
+    is_simple_term.
     """
-    return ("(" + text + ")") if " " in text else text
+    return text if is_simple_term(text) else "(" + text + ")"
 
 
 def _operator_expression(node, values):

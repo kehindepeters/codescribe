@@ -221,8 +221,8 @@ fid = parse_fbd.parse_pous(FIDELITY)[0]
 fid_st = st_render.render_pou(fid)
 fid_art = fbd_render.render_pou(fid)
 
-# A connector terminates its network, so all six must survive.
-check_equal("fidelity: all six networks survive", len(fid.networks), 6)
+# A connector terminates its network, so all seven must survive.
+check_equal("fidelity: all seven networks survive", len(fid.networks), 7)
 
 # negated="true" on an outVariable inverts the logic if it is dropped.
 check("fidelity: negated output inverts in ST", any("xInverted := NOT xIn;" in line for line in fid_st))
@@ -250,6 +250,10 @@ check("fidelity: negated output pin is marked in the diagram", any("Q =o> xIdle"
 # NOT binds tighter than OR in IEC 61131-3, so a negated compound expression
 # must keep its parentheses or the logic regroups.
 check("fidelity: negated compound expression keeps its grouping", any("xGuard := NOT (xA OR xB);" in line for line in fid_st))
+
+# Expressions are free-form ST and are routinely typed without spaces; NOT
+# still binds above the comparison, so "NOT iCount>5" states (NOT iCount)>5.
+check("fidelity: spaceless compound keeps its grouping", any("xHot := NOT (iCount>5);" in line for line in fid_st))
 
 
 # --- language dispatch -----------------------------------------------------

@@ -64,6 +64,24 @@
             <variable name="tmr2">
               <type><derived name="TON"/></type>
             </variable>
+            <variable name="xB">
+              <type><BOOL/></type>
+            </variable>
+            <variable name="xGo2">
+              <type><BOOL/></type>
+            </variable>
+            <variable name="xFin">
+              <type><BOOL/></type>
+            </variable>
+            <variable name="tmrA">
+              <type><derived name="TON"/></type>
+            </variable>
+            <variable name="ctr2">
+              <type><derived name="CTU"/></type>
+            </variable>
+            <variable name="tmrD">
+              <type><derived name="TON"/></type>
+            </variable>
           </localVars>
         </interface>
         <body>
@@ -217,6 +235,112 @@
                     <relPosition x="40" y="10"/>
                     <expression>xCool</expression>
                   </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+
+            <!-- Network 6: a negated block output consumed through a side pin
+                 (tmrA.Q into ctr2's RESET) and a negated wired output feeding
+                 a coil (ctr2.Q) - both consumer paths must keep the NOT -->
+            <leftPowerRail localId="20">
+              <position x="10" y="220"/>
+              <connectionPointOut><relPosition x="0" y="10"/></connectionPointOut>
+            </leftPowerRail>
+            <contact localId="21" negated="false">
+              <position x="40" y="250"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="20"/>
+              </connectionPointIn>
+              <connectionPointOut><relPosition x="30" y="10"/></connectionPointOut>
+              <variable>xB</variable>
+            </contact>
+            <block localId="22" typeName="TON" instanceName="tmrA">
+              <position x="90" y="250"/>
+              <inputVariables>
+                <variable formalParameter="IN">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="21"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="Q" negated="true">
+                  <connectionPointOut><relPosition x="40" y="10"/></connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <contact localId="23" negated="false">
+              <position x="40" y="220"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="20"/>
+              </connectionPointIn>
+              <connectionPointOut><relPosition x="30" y="10"/></connectionPointOut>
+              <variable>xGo2</variable>
+            </contact>
+            <block localId="24" typeName="CTU" instanceName="ctr2">
+              <position x="150" y="220"/>
+              <inputVariables>
+                <variable formalParameter="CU">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="23"/>
+                  </connectionPointIn>
+                </variable>
+                <variable formalParameter="RESET">
+                  <connectionPointIn>
+                    <relPosition x="0" y="20"/>
+                    <connection refLocalId="22" formalParameter="Q"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="Q" negated="true">
+                  <connectionPointOut><relPosition x="40" y="10"/></connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+            <coil localId="25" negated="false">
+              <position x="210" y="220"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="24" formalParameter="Q"/>
+              </connectionPointIn>
+              <connectionPointOut><relPosition x="30" y="10"/></connectionPointOut>
+              <variable>xFin</variable>
+            </coil>
+            <rightPowerRail localId="26">
+              <position x="250" y="220"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="25"/>
+              </connectionPointIn>
+            </rightPowerRail>
+
+            <!-- Network 7: a negated power pin fed straight from the rail -
+                 the inversion must be stated even with no rung condition -->
+            <leftPowerRail localId="30">
+              <position x="10" y="280"/>
+              <connectionPointOut><relPosition x="0" y="10"/></connectionPointOut>
+            </leftPowerRail>
+            <block localId="31" typeName="TON" instanceName="tmrD">
+              <position x="90" y="280"/>
+              <inputVariables>
+                <variable formalParameter="IN" negated="true">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="30"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="Q">
+                  <connectionPointOut><relPosition x="40" y="10"/></connectionPointOut>
                 </variable>
               </outputVariables>
             </block>

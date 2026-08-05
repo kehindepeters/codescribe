@@ -197,7 +197,7 @@ fidelity_st = st_render.render_pou(fidelity_pou)
 fidelity_art = render_pou(fidelity_pou)
 
 # The jump rung and the label rung must both survive as rungs at all.
-check_equal("fidelity: all five rungs survive", len(fidelity_pou.rungs), 5)
+check_equal("fidelity: all seven rungs survive", len(fidelity_pou.rungs), 7)
 
 # A jump's target lives in a "label" attribute; losing it drew ">>?" and
 # emitted no ST for the whole rung, guard included.
@@ -227,6 +227,19 @@ check("fidelity: negated outVariable is marked in the diagram", any("[NOT xStop]
 check("fidelity: negated power pin inverts in ST", any("tmr2(IN := NOT xRun);" in line for line in fidelity_st))
 check("fidelity: negated output pin inverts its assignment", any("xCool := NOT tmr2.Q;" in line for line in fidelity_st))
 check("fidelity: negated output pin is marked in the diagram", any("Q =o> xCool" in line for line in fidelity_art))
+
+# A negated output consumed through a SIDE PIN goes via expr_to_text, a
+# different path from the power flow - it must keep the NOT too.
+check("fidelity: negated output survives into a side pin", any("RESET := xB AND NOT tmrA.Q" in line for line in fidelity_st))
+check("fidelity: side pin caption matches the ST", any("RESET := xB AND NOT tmrA.Q" in line for line in fidelity_art))
+
+# A negated wired output feeding a coil, and only one bubble drawn for it.
+check("fidelity: negated wired output inverts the coil", any("xFin := NOT ctr2.Q;" in line for line in fidelity_st))
+check("fidelity: no double bubble on a wired negated output", not any("Q oo" in line for line in fidelity_art))
+
+# A negated power pin fed straight from the rail still states its inversion,
+# instead of emitting a bare call identical to the un-negated case.
+check("fidelity: rail-fed negated power pin is stated", any("tmrD(IN := NOT TRUE);" in line for line in fidelity_st))
 
 
 # --- byte order mark -------------------------------------------------------

@@ -94,10 +94,13 @@ def _render_block(element):
     right = []
     for pin, assigned in element.output_pins:
         text = pin or "?"
+        wired_out = element.output_wired and pin == element.active_output
         if assigned:
             # =o> is => with the negation bubble: the pin stores its inverse.
             text += (" =o> " if pin in element.negated_outputs else " => ") + assigned
-        elif pin in element.negated_outputs:
+        elif pin in element.negated_outputs and not wired_out:
+            # A wired pin draws its bubble on the box edge instead - one
+            # bubble, not two.
             text += " o"
         right.append(text)
 
