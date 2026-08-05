@@ -133,6 +133,79 @@ try:
     broken = FakePou("BROKEN", None)
     check("a broken export is reported, not raised", graphical_export.write_rendered_text(broken, broken_base) is False)
     check("broken pou writes no file", not os.path.exists(broken_base + ".txt"))
+
+    # The barrier must also hold around its own scaffolding: a temp file that
+    # cannot be created (%TEMP% full) or removed (an antivirus scan holding it)
+    # is exactly the kind of environmental hiccup that must not abort a whole
+    # Export To Files run over a derived file.
+
+    real_mkstemp = tempfile.mkstemp
+
+    def failing_mkstemp(*args, **kwargs):
+        raise OSError("no temp space")
+
+    tempfile.mkstemp = failing_mkstemp
+    try:
+        no_temp = FakePou("NO_TEMP", os.path.join(FIXTURES, "LDTesting.xml"))
+        try:
+            outcome = graphical_export.write_rendered_text(no_temp, os.path.join(workspace, "NO_TEMP"))
+            check("a temp-file creation failure is reported, not raised", outcome is False)
+        except Exception as error:
+            check("a temp-file creation failure is reported, not raised", False, repr(error))
+    finally:
+        tempfile.mkstemp = real_mkstemp
+
+    real_remove = os.remove
+
+    def failing_remove(path):
+        raise OSError("sharing violation")
+
+    os.remove = failing_remove
+    try:
+        sticky = FakePou("STICKY", os.path.join(FIXTURES, "LDTesting.xml"))
+        try:
+            outcome = graphical_export.write_rendered_text(sticky, os.path.join(workspace, "STICKY"))
+            check("a temp-file cleanup failure is reported, not raised", outcome is True)
+        except Exception as error:
+            check("a temp-file cleanup failure is reported, not raised", False, repr(error))
+    finally:
+        os.remove = real_remove
+
+    # A write that dies halfway must not leave a truncated .txt behind: the
+    # staging folder is swapped into place wholesale, and a half-written
+    # rendering looks exactly like a valid one that misstates the logic.
+    real_open_utf8 = graphical_export.open_utf8
+
+    class FailingWriter(object):
+        def __init__(self, handle):
+            self._handle = handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self._handle.close()
+            return False
+
+        def write(self, text):
+            self._handle.write(text[: len(text) // 2])
+            raise IOError("disk full")
+
+    def failing_open_utf8(path, mode):
+        return FailingWriter(real_open_utf8(path, mode))
+
+    graphical_export.open_utf8 = failing_open_utf8
+    try:
+        torn = FakePou("TORN", os.path.join(FIXTURES, "LDTesting.xml"))
+        torn_base = os.path.join(workspace, "TORN")
+        try:
+            outcome = graphical_export.write_rendered_text(torn, torn_base)
+            check("a mid-write failure is reported, not raised", outcome is False)
+        except Exception as error:
+            check("a mid-write failure is reported, not raised", False, repr(error))
+        check("a truncated rendering is not left behind", not os.path.exists(torn_base + ".txt"))
+    finally:
+        graphical_export.open_utf8 = real_open_utf8
 finally:
     shutil.rmtree(workspace)
 

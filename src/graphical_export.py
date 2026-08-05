@@ -95,6 +95,15 @@ def render_plcopen(plcopen_path):
     return lines
 
 
+def _remove_quietly(path):
+    """Best-effort delete. Cleanup trouble is never worth failing an export."""
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
 def write_rendered_text(obj, base_path):
     """Export obj as PLCopen xml, render it, and write <base_path>.txt.
 
@@ -103,13 +112,20 @@ def write_rendered_text(obj, base_path):
 
     A rendering failure must not fail the export: the native xml has already
     been written and is complete and correct on its own. The problem is
-    reported and the export carries on.
+    reported and the export carries on. That barrier has to hold around the
+    temp-file scaffolding too, not just the rendering itself - a full %TEMP%
+    or an antivirus scan holding the temp file open must degrade to a warning
+    exactly like a parse failure does.
     """
     # Staged outside the export folder: exports are written to a staging
     # directory that gets swapped into place wholesale, and a temp file left
     # behind by a failed cleanup would be swapped in along with it.
-    handle, temp_path = tempfile.mkstemp(suffix=".plcopen.xml")
-    os.close(handle)
+    try:
+        handle, temp_path = tempfile.mkstemp(suffix=".plcopen.xml")
+        os.close(handle)
+    except Exception as error:
+        print("WARNING: could not render " + obj.get_name() + ": " + repr(error))
+        return False
     try:
         started = time.time()
         obj.export_xml(path=temp_path, recursive=False)
@@ -131,11 +147,17 @@ def write_rendered_text(obj, base_path):
     except Exception as error:
         print("WARNING: could not render " + obj.get_name() + ": " + repr(error))
         # Say what is actually in the file, so a failure explains itself
-        # instead of needing a separate diagnostic run.
-        if os.path.exists(temp_path):
-            for note in plcopen.describe_suspect_characters(temp_path):
-                print("         " + note)
+        # instead of needing a separate diagnostic run. The diagnostic is
+        # best-effort: it must not turn a reported failure into a raised one.
+        try:
+            if os.path.exists(temp_path):
+                for note in plcopen.describe_suspect_characters(temp_path):
+                    print("         " + note)
+        except Exception:
+            pass
+        # A write that died halfway leaves a truncated rendering that looks
+        # exactly like a valid one. No file at all is the honest outcome.
+        _remove_quietly(base_path + RENDERED_SUFFIX)
         return False
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        _remove_quietly(temp_path)
