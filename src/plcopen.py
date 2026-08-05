@@ -80,7 +80,12 @@ def direct_connections(elem):
 
 
 def block_connections(block_elem):
-    """Wires arriving at a block, tagged with the pin they land on."""
+    """Wires arriving at a block, tagged with the pin they land on.
+
+    A pin variable can carry negated="true" - the bubble CODESYS draws on the
+    pin itself. It applies to everything arriving at that pin, so it rides on
+    each connection.
+    """
     connections = []
     for group_name in ("inputVariables", "inOutVariables"):
         group = find_child(block_elem, group_name)
@@ -90,8 +95,10 @@ def block_connections(block_elem):
             if tag(var) != "variable":
                 continue
             pin = var.get("formalParameter")
+            pin_negated = is_true(var, "negated")
             for connection in direct_connections(var):
                 connection.target_pin = pin
+                connection.negated = pin_negated
                 connections.append(connection)
     return connections
 
@@ -117,6 +124,25 @@ def block_outputs(block_elem):
                 assigned = expression.text.strip()
         outputs.append((var.get("formalParameter"), assigned))
     return outputs
+
+
+def negated_output_pins(block_elem):
+    """Output pins carrying an in-place negation bubble (negated="true").
+
+    The value leaving such a pin is the inverse of the pin, so an inline
+    assignment stores NOT pin and a consumer reads NOT pin. Dropping the flag
+    renders the exact opposite of the program.
+    """
+    pins = set()
+    group = find_child(block_elem, "outputVariables")
+    if group is None:
+        return pins
+    for var in group:
+        if tag(var) != "variable":
+            continue
+        if is_true(var, "negated"):
+            pins.add(var.get("formalParameter"))
+    return pins
 
 
 def block_st_code(block_elem):

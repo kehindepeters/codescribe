@@ -64,8 +64,12 @@ def _symbol_and_label(element):
         return (element.label or "?") + ":", ""
 
     # In/out variables and anything unrecognised draw as a named box so
-    # unhandled logic is visible rather than silently dropped.
-    return "[" + (element.label or "?") + "]", ""
+    # unhandled logic is visible rather than silently dropped. A negated
+    # variable spells its NOT out - there is no bubble to draw on a box.
+    label = element.label or "?"
+    if element.negated:
+        label = "NOT " + label
+    return "[" + label + "]", ""
 
 
 def _render_block(element):
@@ -91,7 +95,10 @@ def _render_block(element):
     for pin, assigned in element.output_pins:
         text = pin or "?"
         if assigned:
-            text += " => " + assigned
+            # =o> is => with the negation bubble: the pin stores its inverse.
+            text += (" =o> " if pin in element.negated_outputs else " => ") + assigned
+        elif pin in element.negated_outputs:
+            text += " o"
         right.append(text)
 
     rows = max(len(left), len(right), 1)
@@ -107,8 +114,13 @@ def _render_block(element):
     for index in range(rows):
         gap = inner - len(left[index]) - len(right[index])
         left_edge = chars["PIN_L"] if wired[index] else chars["V"]
+        if wired[index] and element.power_negated:
+            # The negation bubble on the power pin, drawn on the box wall.
+            left_edge = "o"
         # Only the active output continues onward, and only if consumed.
         right_edge = chars["PIN_R"] if (index == 0 and element.output_wired) else chars["V"]
+        if index == 0 and element.output_wired and element.active_output in element.negated_outputs:
+            right_edge = "o"
         lines.append(left_edge + left[index] + " " * gap + right[index] + right_edge)
     lines.append(chars["BL"] + chars["H"] * inner + chars["BR"])
 

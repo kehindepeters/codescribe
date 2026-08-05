@@ -35,6 +35,7 @@ from plcopen import (
     find_child,
     is_true,
     iter_bodies,
+    negated_output_pins,
     parse_interface,
     tag,
 )
@@ -90,6 +91,7 @@ def parse_ld_body(body_elem):
                 type_name=child.get("typeName") if is_block else None,
                 instance_name=child.get("instanceName") if is_block else None,
                 outputs=block_outputs(child) if is_block else None,
+                negated_outputs=negated_output_pins(child) if is_block else None,
             )
         )
     return nodes
@@ -133,9 +135,20 @@ def expr_to_text(expr):
         if expr.edge == "falling":
             return "F(" + label + ")"
         if expr.negated:
-            return "NOT " + label
+            return "NOT " + _bracket(label)
         return label
     return "?"
+
+
+def _bracket(text):
+    """Parenthesise a compound term before negating or nesting it.
+
+    NOT binds tighter than OR/AND in IEC 61131-3, so "NOT xA OR xB" regroups
+    the logic that "NOT (xA OR xB)" states.
+    """
+    if " " in text:
+        return "(" + text + ")"
+    return text
 
 
 def _build_block(node, by_id, visiting, via_pin):
@@ -147,6 +160,7 @@ def _build_block(node, by_id, visiting, via_pin):
     """
     power_expr = Empty()
     power_pin = None
+    power_negated = False
     side_pins = []
 
     for connection in node.inputs:
@@ -159,12 +173,15 @@ def _build_block(node, by_id, visiting, via_pin):
             # Flattened through expr_to_text, not taken from the raw label:
             # an in-place negated inVariable must keep its NOT, or the pin
             # silently inverts.
-            side_pins.append((connection.target_pin, expr_to_text(sub_expr)))
+            side_pins.append((connection.target_pin, _pin_text(sub_expr, connection)))
         elif power_pin is None:
             power_pin = connection.target_pin
             power_expr = sub_expr
+            # The pin's own negation bubble; it inverts the power flow at the
+            # box wall, after everything the rung has accumulated.
+            power_negated = connection.negated
         else:
-            side_pins.append((connection.target_pin, expr_to_text(sub_expr)))
+            side_pins.append((connection.target_pin, _pin_text(sub_expr, connection)))
 
     input_pins = []
     if power_pin is not None:
@@ -190,8 +207,18 @@ def _build_block(node, by_id, visiting, via_pin):
         # via_pin is set by whatever consumed this block; a block terminating
         # the rung has none.
         output_wired=via_pin is not None,
+        power_negated=power_negated,
+        negated_outputs=set(node.negated_outputs),
     )
     return series([power_expr, element])
+
+
+def _pin_text(sub_expr, connection):
+    """A side pin's caption, honouring the pin's own negation bubble."""
+    text = expr_to_text(sub_expr)
+    if connection.negated:
+        return "NOT " + _bracket(text) if text else "NOT ?"
+    return text
 
 
 def _build_expr(node, by_id, visiting, via_pin=None):

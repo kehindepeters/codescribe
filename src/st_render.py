@@ -12,7 +12,7 @@ matches what the rung does.
 """
 
 from ld_render import render_declaration
-from model import BLOCK, COIL, JUMP, LABEL, RETURN, Assign, Call, Element, Jump, Label, Series, Signal
+from model import BLOCK, COIL, JUMP, LABEL, OUT_VARIABLE, RETURN, Assign, Call, Element, Jump, Label, Series, Signal
 from parse_ld import expr_to_text
 
 
@@ -40,18 +40,34 @@ def rung_to_statements(rung):
             for pin, label in item.input_pins:
                 # A label of None is the power pin, fed by the rung so far.
                 value = condition if label is None else label
+                if label is None and item.power_negated and value:
+                    # The negation bubble on the power pin itself.
+                    value = "NOT " + _operand(value)
                 if value:
                     args.append("%s := %s" % (pin, value))
             name = item.instance_name or item.type_name or "?"
             statements.append("%s(%s);" % (name, ", ".join(args)))
             # An assignment written straight onto an output pin executes every
-            # scan; the diagram draws it, so the ST must say it too.
+            # scan; the diagram draws it, so the ST must say it too. A negated
+            # pin stores its inverse.
             for pin, assigned in item.output_pins:
                 if assigned:
-                    statements.append("%s := %s.%s;" % (assigned, name, pin))
+                    value = "%s.%s" % (name, pin)
+                    if pin in item.negated_outputs:
+                        value = "NOT " + value
+                    statements.append("%s := %s;" % (assigned, value))
             condition = (name + "." + item.active_output) if item.active_output else name
+            if item.active_output in item.negated_outputs:
+                condition = "NOT " + condition
         elif isinstance(item, Element) and item.kind == COIL:
             statements.append(_coil_statement(item, condition))
+        elif isinstance(item, Element) and item.kind == OUT_VARIABLE:
+            # A store through an outVariable element - the standard shape for
+            # a non-boolean result. Power passes through, like a coil.
+            value = condition or "TRUE"
+            if item.negated:
+                value = "NOT " + _operand(value)
+            statements.append("%s := %s;" % (item.label or "?", value))
         elif isinstance(item, Element) and item.kind in (JUMP, RETURN):
             # A jump ends the rung; its guard is the rung condition so far.
             # Same comment form as the FBD path, so both grep alike.
@@ -157,14 +173,24 @@ def _fbd_value(node, statements):
         if node.is_operator:
             # Operators and functions have no instance to call, so they inline
             # as an expression rather than a statement.
-            return _operator_expression(node, [value for _pin, value in pairs])
+            expression = _operator_expression(node, [value for _pin, value in pairs])
+            if node.active_output in node.negated_outputs:
+                expression = "NOT " + _operand(expression)
+            return expression
 
         name = node.instance_name
         statements.append("%s(%s);" % (name, ", ".join("%s := %s" % (pin, value) for pin, value in pairs)))
         for pin, assigned in node.outputs:
             if assigned:
-                statements.append("%s := %s.%s;" % (assigned, name, pin))
-        return (name + "." + node.active_output) if node.active_output else name
+                value = "%s.%s" % (name, pin)
+                # A negated output pin stores its inverse.
+                if pin in node.negated_outputs:
+                    value = "NOT " + value
+                statements.append("%s := %s;" % (assigned, value))
+        result = (name + "." + node.active_output) if node.active_output else name
+        if node.active_output in node.negated_outputs:
+            result = "NOT " + result
+        return result
 
     return "?"
 

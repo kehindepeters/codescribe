@@ -10,6 +10,10 @@
     * an assignment written straight onto a block output pin - drawn in the
       diagram but absent from the ST, which is the half reviewers are told
       to trust
+    * a rung storing its result through an outVariable element - the store
+      vanished from the ST entirely, and a negated one lost its NOT
+    * the negation bubble on a block's own pins: a negated power input and a
+      negated output pin with an inline assignment both inverted silently
 -->
 <project xmlns="http://www.plcopen.org/xml/tc6_0201">
   <fileHeader companyName="greenforge-labs" productName="codescribe-fixture" productVersion="1"
@@ -44,6 +48,21 @@
             </variable>
             <variable name="ctr">
               <type><derived name="CTU"/></type>
+            </variable>
+            <variable name="xPress">
+              <type><BOOL/></type>
+            </variable>
+            <variable name="xStop">
+              <type><BOOL/></type>
+            </variable>
+            <variable name="xRun">
+              <type><BOOL/></type>
+            </variable>
+            <variable name="xCool">
+              <type><BOOL/></type>
+            </variable>
+            <variable name="tmr2">
+              <type><derived name="TON"/></type>
             </variable>
           </localVars>
         </interface>
@@ -142,6 +161,65 @@
                 <connection refLocalId="9"/>
               </connectionPointIn>
             </rightPowerRail>
+
+            <!-- Network 4: a rung storing through a negated outVariable -->
+            <leftPowerRail localId="11">
+              <position x="10" y="130"/>
+              <connectionPointOut><relPosition x="0" y="10"/></connectionPointOut>
+            </leftPowerRail>
+            <contact localId="12" negated="false">
+              <position x="40" y="130"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="11"/>
+              </connectionPointIn>
+              <connectionPointOut><relPosition x="30" y="10"/></connectionPointOut>
+              <variable>xPress</variable>
+            </contact>
+            <outVariable localId="13" negated="true">
+              <position x="90" y="130"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="12"/>
+              </connectionPointIn>
+              <expression>xStop</expression>
+            </outVariable>
+
+            <!-- Network 5: negation bubbles on the block's own pins - a
+                 negated power input and a negated, assigned output -->
+            <leftPowerRail localId="14">
+              <position x="10" y="160"/>
+              <connectionPointOut><relPosition x="0" y="10"/></connectionPointOut>
+            </leftPowerRail>
+            <contact localId="15" negated="false">
+              <position x="40" y="160"/>
+              <connectionPointIn>
+                <relPosition x="0" y="10"/>
+                <connection refLocalId="14"/>
+              </connectionPointIn>
+              <connectionPointOut><relPosition x="30" y="10"/></connectionPointOut>
+              <variable>xRun</variable>
+            </contact>
+            <block localId="16" typeName="TON" instanceName="tmr2">
+              <position x="90" y="160"/>
+              <inputVariables>
+                <variable formalParameter="IN" negated="true">
+                  <connectionPointIn>
+                    <relPosition x="0" y="10"/>
+                    <connection refLocalId="15"/>
+                  </connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="Q" negated="true">
+                  <connectionPointOut>
+                    <relPosition x="40" y="10"/>
+                    <expression>xCool</expression>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
 
           </LD>
         </body>

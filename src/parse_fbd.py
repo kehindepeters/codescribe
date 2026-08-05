@@ -17,6 +17,7 @@ from plcopen import (
     find_child,
     is_true,
     iter_bodies,
+    negated_output_pins,
     parse_interface,
     tag,
 )
@@ -79,9 +80,27 @@ def parse_fbd_body(body_elem):
             instance_name=child.get("instanceName") if is_block else None,
             outputs=block_outputs(child) if is_block else None,
             st_code=block_st_code(child) if is_block else None,
+            negated_outputs=negated_output_pins(child) if is_block else None,
         )
         nodes.append(node)
     return nodes
+
+
+def _negate(source):
+    """Wrap a pin's source in the negation its pin bubble demands.
+
+    A Signal simply flips; anything else becomes an explicit NOT operator so
+    the inversion is visible in both the ST and the diagram.
+    """
+    if isinstance(source, Signal):
+        return Signal(source.label, negated=not source.negated)
+    return Call(
+        type_name="NOT",
+        inputs=[("In", source)],
+        outputs=[("Out", None)],
+        active_output="Out",
+        output_wired=True,
+    )
 
 
 def _build(node, by_id, visiting, via_pin=None):
@@ -96,6 +115,9 @@ def _build(node, by_id, visiting, via_pin=None):
             source = None
             if upstream is not None:
                 source = _build(upstream, by_id, visiting, connection.source_pin)
+            if connection.negated and source is not None:
+                # The bubble on the pin itself, not on what feeds it.
+                source = _negate(source)
             inputs.append((connection.target_pin, source))
 
         active = via_pin
@@ -111,6 +133,7 @@ def _build(node, by_id, visiting, via_pin=None):
             # via_pin is set by the consumer; a network sink has none.
             output_wired=via_pin is not None,
             st_code=list(node.st_code),
+            negated_outputs=set(node.negated_outputs),
         )
 
     if node.kind in (OUT_VARIABLE, JUMP, RETURN, CONNECTOR):
@@ -126,7 +149,7 @@ def _build(node, by_id, visiting, via_pin=None):
             # A connector names the wire feeding it, so it renders as an
             # assignment to that name and the matching continuation reads the
             # name back. Not real ST - but the logic stays on the page.
-            return Assign(node.label or "?", source)
+            return Assign(node.label or "?", source, negated=node.negated)
         return Jump(node.label or ("RETURN" if node.kind == RETURN else "?"), source)
 
     if node.kind == LABEL:

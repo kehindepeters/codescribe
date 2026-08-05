@@ -221,8 +221,8 @@ fid = parse_fbd.parse_pous(FIDELITY)[0]
 fid_st = st_render.render_pou(fid)
 fid_art = fbd_render.render_pou(fid)
 
-# A connector terminates its network, so all three must survive.
-check_equal("fidelity: all three networks survive", len(fid.networks), 3)
+# A connector terminates its network, so all six must survive.
+check_equal("fidelity: all six networks survive", len(fid.networks), 6)
 
 # negated="true" on an outVariable inverts the logic if it is dropped.
 check("fidelity: negated output inverts in ST", any("xInverted := NOT xIn;" in line for line in fid_st))
@@ -235,6 +235,21 @@ check("fidelity: connector network keeps its logic", any("C1 := xRun AND xReady;
 check("fidelity: continuation resolves to the named wire", any("xBoth := C1;" in line for line in fid_st))
 check("fidelity: nothing is fabricated as FALSE", not any(":= FALSE" in line for line in fid_st))
 check("fidelity: the connector's source reaches the diagram", any("xRun" in line for line in fid_art))
+
+# The negation bubble on a block's own input pin, distinct from a negated
+# inVariable element. Dropping it computes AND where the program computes
+# AND NOT.
+check("fidelity: negated input pin inverts in ST", any("xMasked := xRun2 AND (NOT xReady2);" in line for line in fid_st))
+check("fidelity: negated input pin reaches the diagram", any("NOT" in line and "xReady2" in line for line in fid_art))
+
+# The same bubble on an output pin carrying an inline assignment: the stored
+# value is the inverse of the pin.
+check("fidelity: negated output pin inverts its assignment", any("xIdle := NOT tmr.Q;" in line for line in fid_st))
+check("fidelity: negated output pin is marked in the diagram", any("Q =o> xIdle" in line for line in fid_art))
+
+# NOT binds tighter than OR in IEC 61131-3, so a negated compound expression
+# must keep its parentheses or the logic regroups.
+check("fidelity: negated compound expression keeps its grouping", any("xGuard := NOT (xA OR xB);" in line for line in fid_st))
 
 
 # --- language dispatch -----------------------------------------------------

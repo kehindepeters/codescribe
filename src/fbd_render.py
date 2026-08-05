@@ -115,7 +115,10 @@ def _render_call(call):
         pin, assigned = pin_and_assignment
         text = pin or "?"
         if assigned:
-            text += " => " + assigned
+            # =o> is => with the negation bubble: the pin stores its inverse.
+            text += (" =o> " if pin in call.negated_outputs else " => ") + assigned
+        elif pin in call.negated_outputs:
+            text += " o"
         out_at[output_rows[index]] = text
 
     title = call.title

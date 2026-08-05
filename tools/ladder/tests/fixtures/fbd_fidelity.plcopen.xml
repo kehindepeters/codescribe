@@ -9,8 +9,17 @@
     * a connector/continuation pair - the named wire CODESYS uses to split a
       network for readability. Mishandled, the upstream network vanished
       entirely and the consumer rendered as a fabricated FALSE assignment.
+    * negated="true" on a block's own input pin variable - the bubble CODESYS
+      draws on the pin itself, distinct from a negated inVariable element
+    * negated="true" on a block output pin carrying an inline assignment -
+      dropping it stores the inverse
+    * a negated inVariable holding a compound expression - NOT binds tighter
+      than OR in IEC 61131-3, so rendering it without parentheses regroups
+      the logic
 -->
 <project xmlns="http://www.plcopen.org/xml/tc6_0200">
+  <fileHeader companyName="greenforge-labs" productName="codescribe-fixture" productVersion="1"
+              creationDateTime="2020-01-01T00:00:00"/>
   <contentHeader name="FidelityFixture">
     <coordinateInfo>
       <fbd><scaling x="1" y="1" /></fbd>
@@ -95,6 +104,82 @@
                 <connection refLocalId="14" />
               </connectionPointIn>
               <expression>xBoth</expression>
+            </outVariable>
+
+            <!-- Network 4: the negation bubble on a block input pin itself -->
+            <inVariable localId="20">
+              <position x="0" y="0" />
+              <connectionPointOut />
+              <expression>xRun2</expression>
+            </inVariable>
+            <inVariable localId="21">
+              <position x="0" y="0" />
+              <connectionPointOut />
+              <expression>xReady2</expression>
+            </inVariable>
+            <block localId="22" typeName="AND">
+              <position x="0" y="0" />
+              <inputVariables>
+                <variable formalParameter="In1">
+                  <connectionPointIn><connection refLocalId="20" /></connectionPointIn>
+                </variable>
+                <variable formalParameter="In2" negated="true">
+                  <connectionPointIn><connection refLocalId="21" /></connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables />
+              <outputVariables>
+                <variable formalParameter="Out1"><connectionPointOut /></variable>
+              </outputVariables>
+              <addData>
+                <data name="http://www.3s-software.com/plcopenxml/fbdcalltype" handleUnknown="implementation">
+                  <CallType xmlns="">operator</CallType>
+                </data>
+              </addData>
+            </block>
+            <outVariable localId="23">
+              <position x="0" y="0" />
+              <connectionPointIn>
+                <connection refLocalId="22" formalParameter="Out1" />
+              </connectionPointIn>
+              <expression>xMasked</expression>
+            </outVariable>
+
+            <!-- Network 5: a negated output pin carrying an inline assignment -->
+            <inVariable localId="30">
+              <position x="0" y="0" />
+              <connectionPointOut />
+              <expression>xGo</expression>
+            </inVariable>
+            <block localId="31" typeName="TON" instanceName="tmr">
+              <position x="0" y="0" />
+              <inputVariables>
+                <variable formalParameter="IN">
+                  <connectionPointIn><connection refLocalId="30" /></connectionPointIn>
+                </variable>
+              </inputVariables>
+              <inOutVariables />
+              <outputVariables>
+                <variable formalParameter="Q" negated="true">
+                  <connectionPointOut>
+                    <expression>xIdle</expression>
+                  </connectionPointOut>
+                </variable>
+              </outputVariables>
+            </block>
+
+            <!-- Network 6: a negated compound expression must keep its grouping -->
+            <inVariable localId="40" negated="true">
+              <position x="0" y="0" />
+              <connectionPointOut />
+              <expression>xA OR xB</expression>
+            </inVariable>
+            <outVariable localId="41">
+              <position x="0" y="0" />
+              <connectionPointIn>
+                <connection refLocalId="40" />
+              </connectionPointIn>
+              <expression>xGuard</expression>
             </outVariable>
 
           </FBD>

@@ -35,12 +35,17 @@ class Connection(object):
     (CODESYS writes ``formalParameter="Q"`` on the connection itself), while
     ``target_pin`` is the input pin on *this* element. Only blocks have named
     pins; for contacts and coils both are None.
+
+    ``negated`` is the bubble CODESYS draws on the *pin itself* (negated="true"
+    on the pin's variable element) - separate from a negated inVariable, and
+    just as logic-inverting if dropped.
     """
 
-    def __init__(self, ref_id, source_pin=None, target_pin=None):
+    def __init__(self, ref_id, source_pin=None, target_pin=None, negated=False):
         self.ref_id = ref_id
         self.source_pin = source_pin
         self.target_pin = target_pin
+        self.negated = negated
 
     def __repr__(self):
         return "Connection(%s, source_pin=%r, target_pin=%r)" % (self.ref_id, self.source_pin, self.target_pin)
@@ -62,6 +67,7 @@ class Node(object):
         instance_name=None,
         outputs=None,
         st_code=None,
+        negated_outputs=None,
     ):
         self.st_code = st_code if st_code is not None else []  # blocks only: inline ST
         self.local_id = local_id
@@ -74,6 +80,9 @@ class Node(object):
         self.type_name = type_name  # blocks only
         self.instance_name = instance_name  # blocks only, absent for operators
         self.outputs = outputs if outputs is not None else []  # blocks only: (pin, assigned_var)
+        # blocks only: output pins whose in-place negation bubble inverts the
+        # value leaving them
+        self.negated_outputs = negated_outputs if negated_outputs is not None else set()
 
     def __repr__(self):
         return "Node(%s, %s, %r, inputs=%r)" % (self.local_id, self.kind, self.label, self.inputs)
@@ -121,7 +130,14 @@ class Signal(object):
 
     @property
     def text(self):
-        return ("NOT " + (self.label or "")) if self.negated else (self.label or "")
+        label = self.label or ""
+        if not self.negated:
+            return label
+        # NOT binds tighter than OR/AND in IEC 61131-3, so a compound
+        # expression must keep its parentheses or the logic regroups.
+        if " " in label:
+            return "NOT (" + label + ")"
+        return "NOT " + label
 
     def __repr__(self):
         return "Signal(%r, negated=%r)" % (self.label, self.negated)
@@ -165,12 +181,16 @@ class Call(object):
         active_output=None,
         output_wired=False,
         st_code=None,
+        negated_outputs=None,
     ):
         self.type_name = type_name
         self.instance_name = instance_name
         self.inputs = inputs if inputs is not None else []
         self.outputs = outputs if outputs is not None else []
         self.active_output = active_output
+        # Pins carrying CODESYS's in-place negation bubble: the value leaving
+        # them is the inverse of the pin.
+        self.negated_outputs = negated_outputs if negated_outputs is not None else set()
         # An EXECUTE box carries inline ST as its whole body. Dropping it loses
         # the logic entirely while still drawing a plausible-looking box.
         self.st_code = st_code if st_code is not None else []
@@ -244,6 +264,8 @@ class Element(object):
         output_pins=None,
         active_output=None,
         output_wired=False,
+        power_negated=False,
+        negated_outputs=None,
     ):
         self.kind = kind
         self.label = label
@@ -255,6 +277,11 @@ class Element(object):
         self.input_pins = input_pins if input_pins is not None else []
         self.output_pins = output_pins if output_pins is not None else []
         self.active_output = active_output
+        # Blocks only: the negation bubble on the pin the rung's power enters
+        # through, and the set of output pins carrying one. Both invert the
+        # logic in place if dropped.
+        self.power_negated = power_negated
+        self.negated_outputs = negated_outputs if negated_outputs is not None else set()
         # True when something downstream actually consumes the active output,
         # so the renderer knows whether to break the box edge with a tee.
         self.output_wired = output_wired

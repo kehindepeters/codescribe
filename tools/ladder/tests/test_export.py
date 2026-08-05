@@ -156,10 +156,18 @@ try:
         tempfile.mkstemp = real_mkstemp
 
     real_remove = os.remove
+    real_sticky_mkstemp = tempfile.mkstemp
+    stranded = []
 
     def failing_remove(path):
         raise OSError("sharing violation")
 
+    def recording_mkstemp(*args, **kwargs):
+        result = real_sticky_mkstemp(*args, **kwargs)
+        stranded.append(result[1])
+        return result
+
+    tempfile.mkstemp = recording_mkstemp
     os.remove = failing_remove
     try:
         sticky = FakePou("STICKY", os.path.join(FIXTURES, "LDTesting.xml"))
@@ -170,6 +178,12 @@ try:
             check("a temp-file cleanup failure is reported, not raised", False, repr(error))
     finally:
         os.remove = real_remove
+        tempfile.mkstemp = real_sticky_mkstemp
+        # The blocked cleanup deliberately strands the temp file; without this
+        # the suite leaks one orphan into the real temp directory per run.
+        for leaked in stranded:
+            if os.path.exists(leaked):
+                os.remove(leaked)
 
     # A write that dies halfway must not leave a truncated .txt behind: the
     # staging folder is swapped into place wholesale, and a half-written

@@ -119,7 +119,10 @@ if moved_pou is not None:
 
 # The same must hold vertically - a renderer that started ordering rungs by y
 # coordinate would break the promise while the x-only check stayed green.
-moved_down = source_text.replace('" y="', '" y="7')
+# Only the first few positions are shifted: a uniform prefix is
+# order-preserving, so shifting everything could never catch a renderer that
+# sorts by coordinate - scrambling relative order is what makes this bite.
+moved_down = source_text.replace('" y="', '" y="9', 3)
 check("the y shift touched the fixture", moved_down != source_text)
 try:
     moved_down_pou = parse_pous(io.BytesIO(moved_down.encode("utf-8")))[0]
@@ -194,7 +197,7 @@ fidelity_st = st_render.render_pou(fidelity_pou)
 fidelity_art = render_pou(fidelity_pou)
 
 # The jump rung and the label rung must both survive as rungs at all.
-check_equal("fidelity: all three rungs survive", len(fidelity_pou.rungs), 3)
+check_equal("fidelity: all five rungs survive", len(fidelity_pou.rungs), 5)
 
 # A jump's target lives in a "label" attribute; losing it drew ">>?" and
 # emitted no ST for the whole rung, guard included.
@@ -212,6 +215,18 @@ check("fidelity: negated pin keeps its NOT in the box", any("RESET := NOT xManua
 # but the ST - the half reviewers are told to trust - left it out.
 check("fidelity: output pin assignment reaches ST", any("iCount := ctr.CV;" in line for line in fidelity_st))
 check("fidelity: output pin assignment is drawn", any("CV => iCount" in line for line in fidelity_art))
+
+# A rung can store through an outVariable element instead of a coil - the
+# standard shape for a non-boolean result. It emitted no ST at all, and a
+# negated one lost its NOT in the diagram too.
+check("fidelity: outVariable store reaches ST", any("xStop := NOT xPress;" in line for line in fidelity_st))
+check("fidelity: negated outVariable is marked in the diagram", any("[NOT xStop]" in line for line in fidelity_art))
+
+# The negation bubble on the block's own pins: a negated power input and a
+# negated, assigned output pin. Both inverted silently.
+check("fidelity: negated power pin inverts in ST", any("tmr2(IN := NOT xRun);" in line for line in fidelity_st))
+check("fidelity: negated output pin inverts its assignment", any("xCool := NOT tmr2.Q;" in line for line in fidelity_st))
+check("fidelity: negated output pin is marked in the diagram", any("Q =o> xCool" in line for line in fidelity_art))
 
 
 # --- byte order mark -------------------------------------------------------
