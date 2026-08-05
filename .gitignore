@@ -1,5 +1,9 @@
 .vscode/
 
+# Claude Code's per-developer tool permissions. Machine-specific paths, and
+# permission grants that should not be inherited by whoever clones the repo.
+.claude/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
