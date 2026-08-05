@@ -22,6 +22,7 @@ import fbd_render
 import ld_render
 import parse_fbd
 import parse_ld
+import plcopen
 import st_render
 from util import open_utf8
 
@@ -84,6 +85,11 @@ def write_rendered_text(obj, base_path):
         return True
     except Exception as error:
         print("WARNING: could not render " + obj.get_name() + ": " + repr(error))
+        # Say what is actually in the file, so a failure explains itself
+        # instead of needing a separate diagnostic run.
+        if os.path.exists(temp_path):
+            for note in plcopen.describe_suspect_characters(temp_path):
+                print("         " + note)
         return False
     finally:
         if os.path.exists(temp_path):

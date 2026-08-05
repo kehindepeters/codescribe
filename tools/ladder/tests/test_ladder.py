@@ -202,6 +202,58 @@ check_equal(
 )
 
 
+# --- non-ASCII content -----------------------------------------------------
+
+# The parser CODESYS ships works byte-wise and rejects UTF-8 multi-byte
+# sequences, so one degree sign in a comment loses the whole POU. Numeric
+# character references are ASCII and every parser expands them identically.
+DEGREE = b'<a><b>Temp \xc2\xb0C</b></a>'
+
+check_equal(
+    "non-ASCII becomes a numeric character reference",
+    plcopen.read_document(io.BytesIO(DEGREE)),
+    b"<a><b>Temp &#176;C</b></a>",
+)
+check("escaped bytes are pure ASCII", all(b < 128 for b in bytearray(plcopen.read_document(io.BytesIO(DEGREE)))))
+
+# The whole point: the parsed text must come back unchanged.
+import xml.etree.ElementTree as ET  # noqa: E402
+
+check_equal(
+    "the character survives the round trip",
+    ET.fromstring(plcopen.read_document(io.BytesIO(DEGREE)))[0].text,
+    u"Temp \u00b0C",
+)
+check_equal(
+    "pure ASCII documents are left alone",
+    plcopen.read_document(io.BytesIO(b"<a>plain</a>")),
+    b"<a>plain</a>",
+)
+
+# A failure has to explain itself, so the next CODESYS run needs no separate
+# diagnostic script.
+handle = io.open(os.path.join(FIXTURES, "codesys", "LDTesting.xml"), "rb")
+try:
+    clean = handle.read()
+finally:
+    handle.close()
+
+import tempfile  # noqa: E402
+
+descriptor, suspect_path = tempfile.mkstemp(suffix=".xml")
+try:
+    os.write(descriptor, clean.replace(b"<contact", b"<\x0ccontact", 1))
+    os.close(descriptor)
+    notes = plcopen.describe_suspect_characters(suspect_path)
+    check("a control character is reported", any("control character 0x0C" in note for note in notes))
+    check("the report carries a line number", any("line " in note for note in notes))
+finally:
+    if os.path.exists(suspect_path):
+        os.remove(suspect_path)
+
+check_equal("a clean file reports nothing suspect", plcopen.describe_suspect_characters(SOURCE), [])
+
+
 # --- real CODESYS export ---------------------------------------------------
 
 # Exported from CODESYS V3.5 SP11 via Project > Export > PLCopenXML. This is

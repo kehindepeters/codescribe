@@ -213,7 +213,77 @@ def read_document(source):
     start = data.find(b"<")
     if start > 0:
         data = data[start:]
-    return data
+    return _to_ascii(data)
+
+
+def _to_ascii(data):
+    """Replace non-ASCII characters with XML numeric character references.
+
+    The ElementTree CODESYS ships works byte-wise and rejects UTF-8 multi-byte
+    sequences outright:
+
+        Error('Syntax error at line 216: illegal character in content',)
+
+    A numeric reference is plain ASCII, and every parser expands it back to
+    the same character, so the parsed result is identical while the bytes
+    handed to the parser are safe. One degree sign in a comment is enough to
+    lose a whole POU otherwise.
+
+    Safe as a blanket transform because PLCopen exports contain no CDATA
+    sections, which are the one place a numeric reference would stay literal
+    text instead of being expanded.
+    """
+    if not any(byte > 0x7F for byte in bytearray(data)):
+        return data
+
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        # Not valid UTF-8 despite the declaration. latin-1 cannot fail, and
+        # preserves every byte as a character so nothing is lost.
+        text = data.decode("latin-1")
+
+    pieces = []
+    for character in text:
+        if ord(character) < 128:
+            pieces.append(character)
+        else:
+            pieces.append("&#%d;" % ord(character))
+    return "".join(pieces).encode("ascii")
+
+
+# XML 1.0 forbids these outright - they cannot even be written as a numeric
+# reference, so a document containing one is malformed at the source.
+_LEGAL_CONTROL = (0x09, 0x0A, 0x0D)
+
+
+def describe_suspect_characters(source, limit=5):
+    """Characters likely to make a parser reject the document.
+
+    Reported on a rendering failure so the next run explains itself, rather
+    than needing another round of manual diagnosis.
+    """
+    try:
+        handle = io.open(source, "rb")
+        try:
+            raw = handle.read()
+        finally:
+            handle.close()
+    except (IOError, OSError) as error:
+        return ["could not re-read the file: " + repr(error)]
+
+    notes = []
+    for line_number, line in enumerate(raw.split(b"\n"), 1):
+        for column, byte in enumerate(bytearray(line), 1):
+            if byte < 0x20 and byte not in _LEGAL_CONTROL:
+                notes.append(
+                    "line %d column %d: control character 0x%02X, illegal in XML 1.0" % (line_number, column, byte)
+                )
+            elif byte > 0x7F:
+                notes.append("line %d column %d: non-ASCII byte 0x%02X" % (line_number, column, byte))
+            if len(notes) >= limit:
+                return notes
+    return notes
 
 
 def iter_bodies(source):
