@@ -7,6 +7,7 @@ import ctypes
 import os
 from pathlib import Path
 import shutil
+import stat
 
 from typing import TypeVar
 
@@ -139,6 +140,14 @@ def copy_config_json(repo_config: Path, config_destination: Path):
 
 
 def remove_existing_symlink(symlink_folder: Path):
+    # exists() and is_symlink() both report False for a junction whose target
+    # is gone, yet the reparse point still blocks CreateSymbolicLinkW with
+    # ERROR_ALREADY_EXISTS, so probe the path itself with lstat
+    try:
+        attributes = os.lstat(symlink_folder).st_file_attributes
+    except FileNotFoundError:
+        return
+
     if symlink_folder.is_symlink():
         old_target = os.readlink(symlink_folder)
         try:
@@ -149,7 +158,11 @@ def remove_existing_symlink(symlink_folder: Path):
             exit(0)
 
         print_ok(f"Removed existing symlink to {old_target}")
-    elif symlink_folder.exists():
+    elif attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+        print_fail(f"ERROR: {symlink_folder} is a junction or other reparse point, not a symlink.")
+        print_fail(f"Please remove it manually (rmdir), then run this installer again.")
+        exit(0)
+    else:
         print_fail(f"ERROR: {symlink_folder} exists and is not a symlink.")
         print_fail(f"Please remove it manually, then run this installer again.")
         exit(0)
