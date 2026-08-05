@@ -4,8 +4,10 @@ Use install.bat: Right click -> "Run as administrator"
 """
 
 import ctypes
+import os
 from pathlib import Path
 import shutil
+import stat
 
 from typing import TypeVar
 
@@ -137,11 +139,58 @@ def copy_config_json(repo_config: Path, config_destination: Path):
     print_ok(f"SUCCESS: config written to {config_destination}")
 
 
+def remove_existing_symlink(symlink_folder: Path):
+    # exists() and is_symlink() both report False for a junction whose target
+    # is gone, yet the reparse point still blocks CreateSymbolicLinkW with
+    # ERROR_ALREADY_EXISTS, so probe the path itself with lstat
+    try:
+        attributes = os.lstat(symlink_folder).st_file_attributes
+    except FileNotFoundError:
+        return
+
+    if symlink_folder.is_symlink():
+        old_target = os.readlink(symlink_folder)
+        try:
+            # directory symlinks on Windows must be removed with rmdir, not unlink
+            symlink_folder.rmdir()
+        except OSError as e:
+            print_fail(f"ERROR removing existing symlink {symlink_folder}: {e}")
+            exit(0)
+
+        print_ok(f"Removed existing symlink to {old_target}")
+    elif attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+        print_fail(f"ERROR: {symlink_folder} is a junction or other reparse point, not a symlink.")
+        print_fail(f"Please remove it manually (rmdir), then run this installer again.")
+        exit(0)
+    else:
+        print_fail(f"ERROR: {symlink_folder} exists and is not a symlink.")
+        print_fail(f"Please remove it manually, then run this installer again.")
+        exit(0)
+
+
 def symlink_install_repo_folder(repo: Path, destination: Path):
     symlink_folder = destination / "codescribe"
-    kdll = ctypes.windll.LoadLibrary("kernel32.dll")
+    remove_existing_symlink(symlink_folder)
+
+    kdll = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_symbolic_link = kdll.CreateSymbolicLinkW
+    create_symbolic_link.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32]
+    create_symbolic_link.restype = ctypes.c_ubyte  # BOOLEAN, a single byte
+
     flag_is_a_directory = 1
-    kdll.CreateSymbolicLinkW(str(symlink_folder), str(repo), flag_is_a_directory)
+    created = create_symbolic_link(str(symlink_folder), str(repo), flag_is_a_directory)
+
+    if not created:
+        error_code = ctypes.get_last_error()
+        print_fail(f"ERROR creating symlink {symlink_folder} -> {repo}")
+        error_privilege_not_held = 1314
+        if error_code == error_privilege_not_held:
+            print_fail(f"Permission error! Are you running as administrator?")
+        else:
+            print_fail(f"CreateSymbolicLinkW failed with error code {error_code}")
+        exit(0)
+
+    print_ok(f"SUCCESS: symlink created {symlink_folder} -> {repo}")
 
 
 if __name__ == "__main__":
@@ -159,9 +208,12 @@ if __name__ == "__main__":
         )
 
         script_path = get_or_create_script_path(install_path)
-        config_json_destination = rename_or_get_config_json_destination(script_path)
 
+        # symlink first: if it fails we exit without having backed away the
+        # existing config.json, leaving the previous install intact
         symlink_install_repo_folder(repo_path, script_path)
+
+        config_json_destination = rename_or_get_config_json_destination(script_path)
         copy_config_json(repo_config_json, config_json_destination)
     except PermissionError:
         print_fail(f"Permission error! Are you running as administrator?")
