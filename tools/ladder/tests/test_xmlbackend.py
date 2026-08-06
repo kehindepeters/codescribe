@@ -83,10 +83,34 @@ check_equal("iter walks the whole tree", len(list(root.iter())), 4)
 # --- the two backends must agree -------------------------------------------
 
 
-def describe(elem):
-    """A comparable shape for an element tree."""
-    children = [describe(child) for child in elem]
-    return (plcopen.tag(elem), elem.text, children)
+def first_difference(left, right, path="/"):
+    """Where two trees first disagree, or None. Reported, not just counted.
+
+    A bare "the trees differ" sends whoever sees it back to CI to guess again;
+    the whole value of this test is that it can say which element and which
+    field, in a place no debugger reaches.
+    """
+    left_tag, right_tag = plcopen.tag(left), plcopen.tag(right)
+    if left_tag != right_tag:
+        return "%s tag %r vs %r" % (path, left_tag, right_tag)
+    if left.text != right.text:
+        return "%s<%s> text %r vs %r" % (path, left_tag, left.text, right.text)
+    left_children, right_children = list(left), list(right)
+    if len(left_children) != len(right_children):
+        return "%s<%s> child count %d vs %d (%r vs %r)" % (
+            path,
+            left_tag,
+            len(left_children),
+            len(right_children),
+            [plcopen.tag(c) for c in left_children][:6],
+            [plcopen.tag(c) for c in right_children][:6],
+        )
+    for index in range(len(left_children)):
+        child_path = "%s%s[%d]/" % (path, plcopen.tag(left_children[index]), index)
+        found = first_difference(left_children[index], right_children[index], child_path)
+        if found:
+            return found
+    return None
 
 
 def attribute_values(elem, names):
@@ -107,7 +131,8 @@ else:
 
         one = xmlbackend.parse(data, xmlbackend.ELEMENT_TREE)
         two = xmlbackend.parse(data, xmlbackend.SYSTEM_XML)
-        check(name + ": both backends build the same tree", describe(one) == describe(two))
+        difference = first_difference(one, two)
+        check(name + ": both backends build the same tree", difference is None, difference or "")
 
         # Shape equality would not catch attributes, which is where most of
         # the parsing decisions actually live.
