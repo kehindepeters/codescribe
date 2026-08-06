@@ -270,7 +270,7 @@ def pou_from_body(pou_elem, body_elem):
         pou_type=pou_elem.get("pouType") or "program",
         language=LANGUAGE,
         variables=parse_interface(find_child(pou_elem, "interface")),
-        declaration_text=declaration_text(find_child(pou_elem, "interface")),
+        declaration_text=declaration_text(pou_elem),
         networks=build_networks(parse_fbd_body(body_elem)),
     )
 

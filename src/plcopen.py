@@ -209,23 +209,11 @@ def _initial_value(var_elem):
     return simple.get("value")
 
 
-def declaration_text(interface_elem):
-    """The lossless plaintext declaration, if CODESYS wrote one.
-
-    Requested with export_xml(declarations_as_plaintext=True). The structured
-    <interface> has nowhere to put a comment, a pragma or an attribute, so
-    rebuilding a declaration from it silently drops all three - and a pragma
-    like {attribute 'qualified_only'} changes what the code means.
-
-    The element name is deliberately not matched exactly. This is a
-    proprietary 3S extension, the addData name has moved between CODESYS
-    versions, and guessing wrong would silently fall back to the lossy path.
-    Anything under the interface's addData that reads like a declaration is
-    taken instead.
-    """
-    if interface_elem is None:
+def _add_data_declaration(owner):
+    """A declaration blob in this element's own addData, or None."""
+    if owner is None:
         return None
-    add_data = find_child(interface_elem, "addData")
+    add_data = find_child(owner, "addData")
     if add_data is None:
         return None
     for data in add_data:
@@ -233,9 +221,33 @@ def declaration_text(interface_elem):
             continue
         for candidate in [data] + list(data):
             text = candidate.text
-            if text and "VAR" in text:
+            if text and "VAR" in text and "END_VAR" in text:
                 return text.replace("\r\n", "\n").strip("\n")
     return None
+
+
+def declaration_text(pou_elem):
+    """The lossless plaintext declaration, if CODESYS wrote one.
+
+    Requested with export_xml(declarations_as_plaintext=True). The structured
+    <interface> has nowhere to put a comment, a pragma or an attribute, so
+    rebuilding a declaration from it silently drops all three - and a pragma
+    like {attribute 'qualified_only'} changes what the code means.
+
+    Both the interface's addData and the POU's own are searched, because the
+    flag demonstrably writes the text - it grows the export by well over a
+    kilobyte - but not inside <interface>, which was the only place the first
+    attempt looked.
+
+    Neither the element name nor the data name is matched exactly: this is a
+    proprietary 3S extension whose naming has moved between CODESYS versions,
+    and pinning a name that later changed would drop silently back to the
+    lossy path. Requiring both VAR and END_VAR keeps that loose match from
+    catching arbitrary prose.
+    """
+    if pou_elem is None:
+        return None
+    return _add_data_declaration(find_child(pou_elem, "interface")) or _add_data_declaration(pou_elem)
 
 
 def parse_interface(interface_elem):

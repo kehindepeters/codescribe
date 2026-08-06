@@ -177,6 +177,7 @@ def probe_declarations():
         ("plain (no plaintext)", lambda o, p: o.export_xml(p, False)),
     )
 
+    exports = {}
     for label, call in shapes:
         handle, path = tempfile.mkstemp(suffix=".plcopen.xml")
         os.close(handle)
@@ -184,24 +185,10 @@ def probe_declarations():
             call(target, path)
             f = open(path, "rb")
             try:
-                content = f.read()
+                exports[label] = f.read()
             finally:
                 f.close()
-            # Only what is inside <interface> counts. Scanning the whole
-            # document instead matches the contentHeader's addData and reports
-            # a plaintext declaration that is not there.
-            start = content.find(b"<interface")
-            if start < 0:
-                report(label, "OK, %d bytes, but the export has no <interface>" % len(content))
-                continue
-            end = content.find(b"</interface>", start)
-            interface = content[start:end] if end > start else content[start : start + 2000]
-            marker = interface.find(b"<addData")
-            if marker < 0:
-                report(label, "OK, %d bytes, no addData inside <interface>" % len(content))
-            else:
-                report(label, "OK, %d bytes, addData INSIDE <interface>" % len(content))
-                report("  interface addData", repr(interface[marker : marker + 500]))
+            report(label, "OK, %d bytes" % len(exports[label]))
         except TypeError as error:
             report(label, "no such overload (%s)" % error)
         except Exception as error:
@@ -209,6 +196,45 @@ def probe_declarations():
         finally:
             if os.path.exists(path):
                 os.remove(path)
+
+    # The flag grows the export, so the text is being written somewhere. Name
+    # every addData in each version and report what the flag adds - guessing
+    # at where it lands has already cost two round trips.
+    plain = exports.get("plain (no plaintext)")
+    with_text = exports.get("positional (path, rec, folders, plaintext)") or exports.get("keyword")
+    if plain is None or with_text is None:
+        return
+
+    report("size difference", "%d bytes added by the flag" % (len(with_text) - len(plain)))
+
+    def data_names(content):
+        names = []
+        index = content.find(b'<data name="')
+        while index >= 0:
+            start = index + len(b'<data name="')
+            end = content.find(b'"', start)
+            names.append(content[start:end])
+            index = content.find(b'<data name="', end)
+        return names
+
+    before, after = data_names(plain), data_names(with_text)
+    added = [name for name in after if name not in before]
+    report("addData names, plain", "%d: %s" % (len(before), sorted(set(before))))
+    report("addData names, plaintext", "%d: %s" % (len(after), sorted(set(after))))
+    report("names only with the flag", added or "(none - the text is not in an addData)")
+
+    for name in added[:2]:
+        marker = with_text.find(b'<data name="' + name)
+        report("  " + str(name), repr(with_text[marker : marker + 600]))
+
+    if not added:
+        # Same data names in both, so the extra bytes are inside one of them.
+        for index in range(min(len(plain), len(with_text))):
+            if plain[index : index + 1] != with_text[index : index + 1]:
+                report("first difference at byte", index)
+                report("  plain", repr(plain[max(0, index - 100) : index + 300]))
+                report("  plaintext", repr(with_text[max(0, index - 100) : index + 300]))
+                break
 
 
 print("=== codescribe xml diagnosis ===")
