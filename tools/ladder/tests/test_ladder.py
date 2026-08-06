@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "src"))
 sys.path.insert(0, os.path.join(HERE, ".."))
 
 import charset  # noqa: E402
-from ld_render import render_pou  # noqa: E402
+from ld_render import render_declaration, render_pou  # noqa: E402
 from model import COIL, CONTACT, Element, Parallel, Series  # noqa: E402
 from parse_ld import parse_pous  # noqa: E402
 from render import write  # noqa: E402
@@ -332,6 +332,68 @@ finally:
         os.remove(suspect_path)
 
 check_equal("a clean file reports nothing suspect", plcopen.describe_suspect_characters(SOURCE), [])
+
+
+# --- plaintext declarations ------------------------------------------------
+
+# The structured <interface> has nowhere to put a comment, a pragma or an
+# attribute. export_xml(declarations_as_plaintext=True) carries the real text,
+# and a pragma like {attribute 'qualified_only'} changes what the code means -
+# so paraphrasing it away is worse than not showing it.
+DECLARATION = """{attribute 'qualified_only'}
+PROGRAM PLAIN
+VAR
+    xStart : BOOL;  // start button, NO contact
+    (* the seal-in *)
+    xRun : BOOL := FALSE;
+END_VAR"""
+
+
+def with_interface(interface):
+    body = '<body><LD><leftPowerRail localId="1"><connectionPointOut/></leftPowerRail>'
+    body += '<coil localId="2"><connectionPointIn><connection refLocalId="1"/></connectionPointIn>'
+    body += "<variable>xRun</variable></coil></LD></body>"
+    document = '<project><types><pous><pou name="PLAIN" pouType="program">'
+    document += interface + body + "</pou></pous></types></project>"
+    return io.BytesIO(document.encode("utf-8"))
+
+
+PLAINTEXT_INTERFACE = (
+    "<interface><localVars><variable name=\"xStart\"><type><BOOL/></type></variable></localVars>"
+    '<addData><data name="http://www.3s-software.com/plcopenxml/declarations" handleUnknown="implementation">'
+    "<Declarations>" + DECLARATION + "</Declarations></data></addData></interface>"
+)
+STRUCTURED_INTERFACE = '<interface><localVars><variable name="xStart"><type><BOOL/></type></variable></localVars></interface>'
+
+plain_pou = parse_pous(with_interface(PLAINTEXT_INTERFACE))[0]
+check_equal("the plaintext declaration is picked up", plain_pou.declaration_text, DECLARATION)
+
+declaration = render_declaration(plain_pou)
+check_equal("it is used verbatim, line for line", declaration, DECLARATION.split("\n"))
+check("a pragma survives", any("{attribute 'qualified_only'}" in line for line in declaration))
+check("a line comment survives", any("// start button, NO contact" in line for line in declaration))
+check("a block comment survives", any("(* the seal-in *)" in line for line in declaration))
+
+# It has to reach the rendered file, not just the model.
+check_equal("the rendering leads with it", render_pou(plain_pou)[0], "{attribute 'qualified_only'}")
+
+# Older exports carry no plaintext, and must still render something.
+structured_pou = parse_pous(with_interface(STRUCTURED_INTERFACE))[0]
+check_equal("no plaintext means none is invented", structured_pou.declaration_text, None)
+check_equal("the structured interface is the fallback", render_declaration(structured_pou)[0], "PROGRAM PLAIN")
+check("the fallback still lists the variable", any("xStart : BOOL;" in line for line in render_declaration(structured_pou)))
+
+# The addData element name is a proprietary extension that has moved between
+# CODESYS versions, so the lookup matches on shape rather than on a name that
+# would silently fall back to the lossy path if it ever changed again.
+RENAMED = PLAINTEXT_INTERFACE.replace("Declarations", "DeclarationText").replace(
+    "plcopenxml/declarations", "plcopenxml/pou-declaration"
+)
+check_equal(
+    "a renamed addData element is still found",
+    parse_pous(with_interface(RENAMED))[0].declaration_text,
+    DECLARATION,
+)
 
 
 # --- real CODESYS export ---------------------------------------------------

@@ -56,10 +56,22 @@ class FakePou(object):
     def get_name(self):
         return self._name
 
-    def export_xml(self, path, recursive):
-        self.export_calls.append((path, recursive))
+    def export_xml(self, path, recursive, declarations_as_plaintext=None):
+        self.export_calls.append((path, recursive, declarations_as_plaintext))
         if self._source is None:
             raise RuntimeError("export_xml exploded")
+        shutil.copyfile(self._source, path)
+
+
+class OldScriptEnginePou(FakePou):
+    """A build without the declarations_as_plaintext overload.
+
+    IronPython raises TypeError when no overload matches, which must fall back
+    to the plain call rather than losing the rendering.
+    """
+
+    def export_xml(self, path, recursive):
+        self.export_calls.append((path, recursive))
         shutil.copyfile(self._source, path)
 
 
@@ -95,6 +107,8 @@ try:
     check("ladder pou is rendered", graphical_export.write_rendered_text(pou, base) is True)
     check("derived file lands beside the xml", os.path.exists(base + ".txt"))
     check_equal("export_xml is asked for a single object", pou.export_calls[0][1], False)
+    # Without this the declaration loses comments, pragmas and attributes.
+    check_equal("plaintext declarations are requested", pou.export_calls[0][2], True)
 
     content = read(base + ".txt")
     check("derived file leads with the declaration", content.startswith("PROGRAM LD_TEST"))
@@ -110,6 +124,13 @@ try:
     # the rendering may appear next to the native xml.
     check_equal("no stray files left behind", sorted(os.listdir(workspace)), ["LD_TEST.txt"])
 
+    # --- an older ScriptEngine without the plaintext overload ---------------
+
+    old_base = os.path.join(workspace, "OLD")
+    old_pou = OldScriptEnginePou("OLD", os.path.join(FIXTURES, "LDTesting.xml"))
+    check("an older ScriptEngine still renders", graphical_export.write_rendered_text(old_pou, old_base) is True)
+    check("it fell back to the plain call", os.path.exists(old_base + ".txt"))
+
     # --- languages we cannot draw are skipped, not written empty ------------
 
     sfc_base = os.path.join(workspace, "SFC_TEST")
@@ -122,7 +143,9 @@ try:
     # The ScriptEngine can keep modules loaded between runs, so without an
     # explicit reset the summary would report totals accumulated across every
     # Export click since CODESYS started.
-    check_equal("one render is counted", graphical_export.STATS["rendered"], 1)
+    # Two ladder POUs rendered by this point: the plain one and the one
+    # standing in for an older ScriptEngine.
+    check_equal("each render is counted", graphical_export.STATS["rendered"], 2)
     check_equal("the skipped sfc is counted", graphical_export.STATS["skipped"], 1)
     check("the summary names both costs", "CODESYS export_xml" in graphical_export.summary())
 

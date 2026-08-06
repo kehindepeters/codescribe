@@ -119,6 +119,24 @@ def render_plcopen(plcopen_path):
     return lines
 
 
+def _export_plcopen(obj, path):
+    """Export one object as PLCopen xml, asking for plaintext declarations.
+
+    The structured <interface> has nowhere to put a comment, a pragma or an
+    attribute, so without this the declaration in the rendering silently drops
+    all three. CODESYS documents the flag as lossless.
+
+    It is a proprietary extension and an overload this ScriptEngine build may
+    not have, so a TypeError - which is what IronPython raises when no
+    overload matches - falls back to the plain call rather than losing the
+    rendering altogether.
+    """
+    try:
+        obj.export_xml(path=path, recursive=False, declarations_as_plaintext=True)
+    except TypeError:
+        obj.export_xml(path=path, recursive=False)
+
+
 def _remove_quietly(path):
     """Best-effort delete. Cleanup trouble is never worth failing an export."""
     try:
@@ -152,7 +170,7 @@ def write_rendered_text(obj, base_path):
         return False
     try:
         started = time.time()
-        obj.export_xml(path=temp_path, recursive=False)
+        _export_plcopen(obj, temp_path)
         STATS["export_xml_seconds"] += time.time() - started
 
         # render_plcopen accounts for its own parse and draw time.

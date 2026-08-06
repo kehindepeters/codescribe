@@ -209,6 +209,35 @@ def _initial_value(var_elem):
     return simple.get("value")
 
 
+def declaration_text(interface_elem):
+    """The lossless plaintext declaration, if CODESYS wrote one.
+
+    Requested with export_xml(declarations_as_plaintext=True). The structured
+    <interface> has nowhere to put a comment, a pragma or an attribute, so
+    rebuilding a declaration from it silently drops all three - and a pragma
+    like {attribute 'qualified_only'} changes what the code means.
+
+    The element name is deliberately not matched exactly. This is a
+    proprietary 3S extension, the addData name has moved between CODESYS
+    versions, and guessing wrong would silently fall back to the lossy path.
+    Anything under the interface's addData that reads like a declaration is
+    taken instead.
+    """
+    if interface_elem is None:
+        return None
+    add_data = find_child(interface_elem, "addData")
+    if add_data is None:
+        return None
+    for data in add_data:
+        if tag(data) != "data":
+            continue
+        for candidate in [data] + list(data):
+            text = candidate.text
+            if text and "VAR" in text:
+                return text.replace("\r\n", "\n").strip("\n")
+    return None
+
+
 def parse_interface(interface_elem):
     """Variables from a POU interface, in declaration order."""
     from model import Variable

@@ -240,6 +240,17 @@ def render_rung(expr):
 
 
 def render_declaration(pou):
+    """The POU's declaration.
+
+    Verbatim when CODESYS gave us the plaintext version, because that is the
+    only form carrying comments, pragmas and attributes - and a pragma like
+    {attribute 'qualified_only'} changes what the code means, so paraphrasing
+    it away is worse than not showing it. Otherwise rebuilt from the
+    structured interface, which is all older exports offer.
+    """
+    if pou.declaration_text:
+        return pou.declaration_text.split("\n")
+
     keyword = POU_TYPE_KEYWORDS.get(pou.pou_type, "PROGRAM")
     lines = [keyword + " " + pou.name]
 

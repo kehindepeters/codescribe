@@ -116,10 +116,16 @@ class Variable(object):
 class Pou(object):
     """A parsed POU. ``rungs`` is populated for LD, ``networks`` for FBD."""
 
-    def __init__(self, name, pou_type, variables=None, rungs=None, networks=None, language=None):
+    def __init__(
+        self, name, pou_type, variables=None, rungs=None, networks=None, language=None, declaration_text=None
+    ):
         self.name = name
         self.pou_type = pou_type
         self.language = language
+        # The declaration exactly as CODESYS wrote it, comments, pragmas and
+        # attributes included. None when the export did not carry one, in
+        # which case it gets rebuilt from `variables` and loses all three.
+        self.declaration_text = declaration_text
         self.variables = variables if variables is not None else []
         self.rungs = rungs if rungs is not None else []
         self.networks = networks if networks is not None else []
