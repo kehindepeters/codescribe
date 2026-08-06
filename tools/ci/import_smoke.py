@@ -29,6 +29,7 @@ MODULES = [
     # Renderers for graphical POUs. No scriptengine dependency of their own,
     # but they have to load under IronPython 2.7 like everything else here.
     "charset",
+    "xmlbackend",
     "layout",
     "model",
     "plcopen",

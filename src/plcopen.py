@@ -17,7 +17,7 @@ import warnings
 # CODESYS's own bundled library - so it is silenced at the point it fires.
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
-    import xml.etree.ElementTree as ET
+    import xmlbackend
 
 from model import Connection
 
@@ -348,7 +348,7 @@ def describe_suspect_characters(source, limit=5):
 
 def iter_bodies(source):
     """Yield (pou_elem, language, body_elem) for every POU with an implementation."""
-    root = ET.fromstring(read_document(source))
+    root = xmlbackend.parse(read_document(source))
     for elem in root.iter():
         if tag(elem) != "pou":
             continue

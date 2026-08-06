@@ -44,6 +44,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\ipy\net45\ipy.exe tools\ladder\tests\test_export.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # The only host with both XML backends, so the only place their
+          # equivalence can actually be checked.
+          .\ipy\net45\ipy.exe tools\ladder\tests\test_xmlbackend.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   ladder:
     name: ladder
@@ -55,3 +59,4 @@ jobs:
           python3 tools/ladder/tests/test_ladder.py
           python3 tools/ladder/tests/test_fbd.py
           python3 tools/ladder/tests/test_export.py
+          python3 tools/ladder/tests/test_xmlbackend.py

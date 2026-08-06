@@ -1,0 +1,145 @@
+# REMEMBER: this must stay valid under IronPython 2.7 as well as Python 3.
+"""Parse XML with whatever the host can do fastest.
+
+CODESYS puts its own ScriptLib ahead of the standard library, and the
+ElementTree it ships there is the xmllib-era one that parses in pure Python.
+Measured on a real project: 25 POUs took 6.8s, of which 6.4s was parsing and
+0.3s was drawing the diagrams. The layout code was never the problem.
+
+IronPython runs on .NET, so System.Xml is right there and native. This picks
+it when it is available and falls back to ElementTree otherwise, which is
+what CPython uses when running the tests.
+
+The two backends must agree exactly, because the golden files are generated
+under CPython and consumed by CODESYS. test_xmlbackend.py compares them
+element for element wherever both are available - which is the IronPython CI
+job, the only place that can.
+
+Only the small slice of the ElementTree API this project actually uses is
+implemented: a tag, attributes, leading text, iteration over child elements,
+and a recursive walk.
+"""
+
+import xml.etree.ElementTree as ET
+
+ELEMENT_TREE = "ElementTree"
+SYSTEM_XML = "System.Xml"
+
+try:
+    import clr
+
+    clr.AddReference("System.Xml")
+    from System import Array, Byte
+    from System.IO import MemoryStream
+    from System.Xml import XmlDocument, XmlNodeType
+
+    _SYSTEM_XML_AVAILABLE = True
+except Exception:  # pragma: no cover - only reachable off IronPython
+    _SYSTEM_XML_AVAILABLE = False
+
+
+class _DotNetElement(object):
+    """The slice of the ElementTree element API this project uses."""
+
+    __slots__ = ("_node",)
+
+    def __init__(self, node):
+        self._node = node
+
+    @property
+    def tag(self):
+        # LocalName drops the namespace, which is what plcopen.tag() would
+        # have stripped anyway.
+        return self._node.LocalName
+
+    def get(self, name, default=None):
+        attributes = self._node.Attributes
+        if attributes is None:
+            return default
+        found = attributes.GetNamedItem(name)
+        # An absent attribute must be None rather than "": callers use
+        # "is None" to tell "not written" from "written empty".
+        return found.Value if found is not None else default
+
+    @property
+    def text(self):
+        """Text before the first child element, as ElementTree defines it.
+
+        Not InnerText, which would flatten descendants and make the two
+        backends disagree on mixed content.
+        """
+        parts = []
+        for child in self._node.ChildNodes:
+            node_type = child.NodeType
+            if node_type == XmlNodeType.Element:
+                break
+            if node_type in (
+                XmlNodeType.Text,
+                XmlNodeType.CDATA,
+                XmlNodeType.Whitespace,
+                XmlNodeType.SignificantWhitespace,
+            ):
+                parts.append(child.Value)
+        return "".join(parts) if parts else None
+
+    def __iter__(self):
+        for child in self._node.ChildNodes:
+            if child.NodeType == XmlNodeType.Element:
+                yield _DotNetElement(child)
+
+    def iter(self):
+        yield self
+        for child in self:
+            for descendant in child.iter():
+                yield descendant
+
+
+def _parse_dotnet(data):
+    document = XmlDocument()
+    # Never fetch an external DTD: a POU export should not be able to make
+    # CODESYS reach out to the network while someone clicks Export.
+    document.XmlResolver = None
+    stream = MemoryStream(Array[Byte](bytearray(data)))
+    try:
+        document.Load(stream)
+    finally:
+        stream.Close()
+    return _DotNetElement(document.DocumentElement)
+
+
+def _parse_element_tree(data):
+    return ET.fromstring(data)
+
+
+def available():
+    """Backend names this host can use, fastest first."""
+    names = []
+    if _SYSTEM_XML_AVAILABLE:
+        names.append(SYSTEM_XML)
+    names.append(ELEMENT_TREE)
+    return names
+
+
+_PARSERS = {SYSTEM_XML: _parse_dotnet, ELEMENT_TREE: _parse_element_tree}
+
+_active = available()[0]
+
+
+def use(name):
+    """Force a backend. Returns the previous one, so tests can restore it."""
+    global _active
+    if name not in _PARSERS:
+        raise ValueError("unknown xml backend %r" % (name,))
+    if name == SYSTEM_XML and not _SYSTEM_XML_AVAILABLE:
+        raise ValueError("System.Xml is not available on this host")
+    previous, _active = _active, name
+    return previous
+
+
+def active():
+    return _active
+
+
+def parse(data, backend=None):
+    """Parse document bytes and return the root element."""
+    return _PARSERS[backend or _active](data)
