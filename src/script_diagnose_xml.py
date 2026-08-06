@@ -24,6 +24,7 @@ import tempfile
 
 import scriptengine  # type: ignore
 
+from object_type import ObjectType, get_object_type
 from util import print_python_version
 
 PLAIN = b'<?xml version="1.0" encoding="utf-8"?><a><b x="1">hi</b></a>'
@@ -79,7 +80,13 @@ def probe_parser():
 
 
 def find_graphical_object(obj, depth=0):
-    """First object with no textual implementation - i.e. a graphical one."""
+    """First graphical POU in the project.
+
+    has_textual_implementation is False on plenty of objects that are not
+    POUs, and the first one found is usually Project Information - whose
+    export has no <interface> at all, so probing it says nothing about
+    declarations while looking like it did.
+    """
     if depth > 12:
         return None
     try:
@@ -88,7 +95,7 @@ def find_graphical_object(obj, depth=0):
         return None
     for child in children:
         try:
-            if child.has_textual_implementation is False:
+            if get_object_type(child) == ObjectType.POU and child.has_textual_implementation is False:
                 return child
         except Exception:
             pass
@@ -159,9 +166,9 @@ def probe_declarations():
 
     target = find_graphical_object(project)
     if target is None:
-        report("graphical object", "none found")
+        report("graphical POU", "none found - open a project with an LD or FBD POU")
         return
-    report("object", target.get_name())
+    report("graphical POU", target.get_name())
 
     shapes = (
         ("positional (path, rec, folders, plaintext)", lambda o, p: o.export_xml(p, False, False, True)),
@@ -180,14 +187,21 @@ def probe_declarations():
                 content = f.read()
             finally:
                 f.close()
-            # Any addData under the interface is what carries the declaration.
-            marker = content.find(b"</interface>")
-            head = content[:marker] if marker > 0 else content
-            has_add_data = b"<addData" in head
-            report(label, "OK, %d bytes, interface addData: %s" % (len(content), has_add_data))
-            if has_add_data:
-                start = head.find(b"<addData")
-                report("  interface addData", repr(head[start : start + 400]))
+            # Only what is inside <interface> counts. Scanning the whole
+            # document instead matches the contentHeader's addData and reports
+            # a plaintext declaration that is not there.
+            start = content.find(b"<interface")
+            if start < 0:
+                report(label, "OK, %d bytes, but the export has no <interface>" % len(content))
+                continue
+            end = content.find(b"</interface>", start)
+            interface = content[start:end] if end > start else content[start : start + 2000]
+            marker = interface.find(b"<addData")
+            if marker < 0:
+                report(label, "OK, %d bytes, no addData inside <interface>" % len(content))
+            else:
+                report(label, "OK, %d bytes, addData INSIDE <interface>" % len(content))
+                report("  interface addData", repr(interface[marker : marker + 500]))
         except TypeError as error:
             report(label, "no such overload (%s)" % error)
         except Exception as error:
