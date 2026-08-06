@@ -41,10 +41,11 @@ except Exception:  # pragma: no cover - only reachable off IronPython
 class _DotNetElement(object):
     """The slice of the ElementTree element API this project uses."""
 
-    __slots__ = ("_node",)
+    __slots__ = ("_node", "_children")
 
     def __init__(self, node):
         self._node = node
+        self._children = None
 
     @property
     def tag(self):
@@ -92,15 +93,29 @@ class _DotNetElement(object):
         return text
 
     def __iter__(self):
-        for child in self._node.ChildNodes:
-            if child.NodeType == XmlNodeType.Element:
-                yield _DotNetElement(child)
+        # Wrapped once and kept. The parsers call find_child several times on
+        # the same element - a block asks for inputVariables, inOutVariables
+        # and outputVariables in turn - and re-wrapping every child on each
+        # call was most of what this backend spent its time doing.
+        if self._children is None:
+            self._children = [
+                _DotNetElement(child) for child in self._node.ChildNodes if child.NodeType == XmlNodeType.Element
+            ]
+        return iter(self._children)
 
     def iter(self):
-        yield self
-        for child in self:
-            for descendant in child.iter():
-                yield descendant
+        """Pre-order walk, as ElementTree does it.
+
+        An explicit stack rather than recursive generators: delegating a yield
+        up through every level of a deep document costs more than the walk.
+        """
+        stack = [self]
+        while stack:
+            node = stack.pop()
+            yield node
+            children = list(node)
+            for index in range(len(children) - 1, -1, -1):
+                stack.append(children[index])
 
 
 def _parse_dotnet(data):

@@ -78,6 +78,19 @@ check_equal("text stops at the first child element", first.text, "text")
 check_equal("an element with no text is None", list(root)[1].text, None)
 check_equal("iteration yields child elements", len(list(root)), 2)
 check_equal("iter walks the whole tree", len(list(root.iter())), 4)
+# Pre-order, like ElementTree - a stack walk is easy to get backwards.
+check_equal("iter is in document order", [plcopen.tag(e) for e in root.iter()], ["root", "a", "b", "a"])
+# Children are cached per element, so repeated find_child calls stay cheap.
+check("repeated iteration is stable", list(root)[0] is list(root)[0])
+
+# POUs are found without walking the document, but an unusual layout must
+# still work rather than silently rendering nothing.
+NESTED = b'<project><wrapper><pou name="X" pouType="program"><body><LD/></body></pou></wrapper></project>'
+check_equal(
+    "a pou outside types/pous is still found",
+    [p.get("name") for p in plcopen.find_pous(xmlbackend.parse(NESTED))],
+    ["X"],
+)
 
 
 # --- the two backends must agree -------------------------------------------

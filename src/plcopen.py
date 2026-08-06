@@ -346,12 +346,29 @@ def describe_suspect_characters(source, limit=5):
     return notes
 
 
+def find_pous(root):
+    """POU elements, without walking the whole document to find them.
+
+    PLCopen puts them at project/types/pous/pou. Scanning every element
+    instead meant touching a few thousand nodes per file to reach one or two,
+    which is pure waste under any backend and expensive under one whose
+    elements are wrapped in Python objects. The full walk stays as a fallback
+    for any layout that does not match.
+    """
+    types = find_child(root, "types")
+    if types is not None:
+        pous = find_child(types, "pous")
+        if pous is not None:
+            found = [child for child in pous if tag(child) == "pou"]
+            if found:
+                return found
+    return [elem for elem in root.iter() if tag(elem) == "pou"]
+
+
 def iter_bodies(source):
     """Yield (pou_elem, language, body_elem) for every POU with an implementation."""
     root = xmlbackend.parse(read_document(source))
-    for elem in root.iter():
-        if tag(elem) != "pou":
-            continue
+    for elem in find_pous(root):
         body = find_child(elem, "body")
         if body is None:
             continue
