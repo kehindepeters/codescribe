@@ -96,6 +96,13 @@ class _DotNetElement(object):
 
 def _parse_dotnet(data):
     document = XmlDocument()
+    # XmlDocument drops insignificant whitespace by default, so an element
+    # whose only content is a newline and some indentation would report no
+    # text at all where ElementTree reports "\n    ". Harmless for every
+    # current caller, since they all strip - but the backends have to agree
+    # about what the document says, not merely about what today's callers
+    # make of it.
+    document.PreserveWhitespace = True
     # Never fetch an external DTD: a POU export should not be able to make
     # CODESYS reach out to the network while someone clicks Export.
     document.XmlResolver = None
