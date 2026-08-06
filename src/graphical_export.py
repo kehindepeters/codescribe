@@ -33,22 +33,38 @@ RENDERED_SUFFIX = ".txt"
 # Rendering adds a second CODESYS-side export per graphical POU, so the cost
 # is worth reporting rather than leaving people to wonder why the export got
 # slower. Split so it is obvious whether CODESYS or this code is the cost.
-STATS = {"rendered": 0, "skipped": 0, "export_xml_seconds": 0.0, "render_seconds": 0.0}
+EMPTY_STATS = {
+    "rendered": 0,
+    "skipped": 0,
+    "export_xml_seconds": 0.0,
+    "parse_seconds": 0.0,
+    "draw_seconds": 0.0,
+}
+
+STATS = dict(EMPTY_STATS)
 
 
 def reset_stats():
-    STATS.update({"rendered": 0, "skipped": 0, "export_xml_seconds": 0.0, "render_seconds": 0.0})
+    STATS.update(EMPTY_STATS)
 
 
 def summary():
-    """One line describing what rendering cost, or None if it did nothing."""
+    """One line describing what rendering cost, or None if it did nothing.
+
+    Split three ways because the first measurement overturned the guess: the
+    CODESYS-side export turned out to be a rounding error next to this code,
+    and "rendering" as a single figure does not say whether that is the XML
+    parser or the layout.
+    """
     if not STATS["rendered"] and not STATS["skipped"]:
         return None
-    return "Rendered %d graphical POUs in %.1fs (%.1fs CODESYS export_xml, %.1fs rendering); skipped %d" % (
+    total = STATS["export_xml_seconds"] + STATS["parse_seconds"] + STATS["draw_seconds"]
+    return "Rendered %d graphical POUs in %.1fs (%.1fs CODESYS export_xml, %.1fs parsing, %.1fs drawing); skipped %d" % (
         STATS["rendered"],
-        STATS["export_xml_seconds"] + STATS["render_seconds"],
+        total,
         STATS["export_xml_seconds"],
-        STATS["render_seconds"],
+        STATS["parse_seconds"],
+        STATS["draw_seconds"],
         STATS["skipped"],
     )
 
@@ -87,13 +103,19 @@ def render_plcopen(plcopen_path):
     emitter is still there and reachable from tools/ladder/render.py for
     anyone who wants it; it is just not what the export writes.
     """
+    started = time.time()
+    pous = _render_pous(plcopen_path)
+    STATS["parse_seconds"] += time.time() - started
+
+    started = time.time()
     lines = []
-    for pou, art_renderer in _render_pous(plcopen_path):
+    for pou, art_renderer in pous:
         lines.extend(art_renderer.render_pou(pou))
         lines.append(u"")
 
     while lines and lines[-1] == u"":
         lines.pop()
+    STATS["draw_seconds"] += time.time() - started
     return lines
 
 
@@ -133,18 +155,16 @@ def write_rendered_text(obj, base_path):
         obj.export_xml(path=temp_path, recursive=False)
         STATS["export_xml_seconds"] += time.time() - started
 
-        started = time.time()
+        # render_plcopen accounts for its own parse and draw time.
         lines = render_plcopen(temp_path)
         if not lines:
             STATS["skipped"] += 1
-            STATS["render_seconds"] += time.time() - started
             return False
 
         with open_utf8(base_path + RENDERED_SUFFIX, "w") as f:
             f.write(u"\n".join(lines))
             f.write(u"\n")
         STATS["rendered"] += 1
-        STATS["render_seconds"] += time.time() - started
         return True
     except Exception as error:
         print("WARNING: could not render " + obj.get_name() + ": " + repr(error))
