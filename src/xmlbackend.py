@@ -80,7 +80,16 @@ class _DotNetElement(object):
                 XmlNodeType.SignificantWhitespace,
             ):
                 parts.append(child.Value)
-        return "".join(parts) if parts else None
+        if not parts:
+            return None
+        text = "".join(parts)
+        # XML requires a parser to normalise line endings to \n, and
+        # ElementTree does. XmlDocument does too - except for the whitespace
+        # nodes PreserveWhitespace keeps, which come back with CR intact. Real
+        # CODESYS exports are CRLF throughout, so this is not a corner case.
+        if "\r" in text:
+            text = text.replace("\r\n", "\n").replace("\r", "\n")
+        return text
 
     def __iter__(self):
         for child in self._node.ChildNodes:
