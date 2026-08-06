@@ -383,6 +383,33 @@ check_equal("no plaintext means none is invented", structured_pou.declaration_te
 check_equal("the structured interface is the fallback", render_declaration(structured_pou)[0], "PROGRAM PLAIN")
 check("the fallback still lists the variable", any("xStart : BOOL;" in line for line in render_declaration(structured_pou)))
 
+# The shape CODESYS actually writes, confirmed by diagnosing a real project:
+# a data element named ".../interfaceasplaintext", sitting at POU level rather
+# than inside <interface> despite the name, with the text nested below it.
+# The first two attempts at this searched only inside <interface>, and then
+# only two levels down.
+REAL_SHAPE = (
+    "<interface><localVars><variable name=\"xStart\"><type><BOOL/></type></variable></localVars></interface>"
+    "<addData><data name=\"http://www.3s-software.com/plcopenxml/interfaceasplaintext\""
+    ' handleUnknown="implementation"><InterfaceAsPlainText><xhtml xmlns="http://www.w3.org/1999/xhtml">'
+    + DECLARATION
+    + "</xhtml></InterfaceAsPlainText></data></addData>"
+)
+
+
+def with_pou_level_add_data(extra):
+    body = '<body><LD><leftPowerRail localId="1"><connectionPointOut/></leftPowerRail>'
+    body += '<coil localId="2"><connectionPointIn><connection refLocalId="1"/></connectionPointIn>'
+    body += "<variable>xRun</variable></coil></LD></body>"
+    document = '<project><types><pous><pou name="PLAIN" pouType="program">'
+    document += extra.replace("</interface>", "</interface>" + body, 1) + "</pou></pous></types></project>"
+    return io.BytesIO(document.encode("utf-8"))
+
+
+real_pou = parse_pous(with_pou_level_add_data(REAL_SHAPE))[0]
+check_equal("the real CODESYS shape is found", real_pou.declaration_text, DECLARATION)
+check("nested text is reached, not just two levels", "// start button, NO contact" in (real_pou.declaration_text or ""))
+
 # The addData element name is a proprietary extension that has moved between
 # CODESYS versions, so the lookup matches on shape rather than on a name that
 # would silently fall back to the lossy path if it ever changed again.

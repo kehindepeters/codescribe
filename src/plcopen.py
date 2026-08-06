@@ -210,19 +210,24 @@ def _initial_value(var_elem):
 
 
 def _add_data_declaration(owner):
-    """A declaration blob in this element's own addData, or None."""
+    """A declaration blob anywhere in this element's own addData, or None.
+
+    The whole addData subtree is walked rather than its first two levels.
+    CODESYS writes the text under a data element named
+    ".../plcopenxml/interfaceasplaintext", and how deeply it nests inside that
+    is exactly the kind of detail that differs between versions.
+    """
     if owner is None:
         return None
     add_data = find_child(owner, "addData")
     if add_data is None:
         return None
-    for data in add_data:
-        if tag(data) != "data":
-            continue
-        for candidate in [data] + list(data):
-            text = candidate.text
-            if text and "VAR" in text and "END_VAR" in text:
-                return text.replace("\r\n", "\n").strip("\n")
+    for element in add_data.iter():
+        text = element.text
+        # Both markers, so a loose structural match cannot catch prose that
+        # merely mentions a variable.
+        if text and "VAR" in text and "END_VAR" in text:
+            return text.replace("\r\n", "\n").strip("\n")
     return None
 
 
