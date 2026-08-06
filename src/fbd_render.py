@@ -187,12 +187,78 @@ def _render(node):
     raise TypeError("cannot render %r" % (node,))
 
 
-def render_network(tree):
-    lines = _render(node=tree).lines
-    # An EXECUTE box's body is the logic; drawing the box without it would be
-    # an empty rectangle where a dozen lines of ST should be.
-    if isinstance(tree, Call) and tree.st_code:
-        lines = lines + [""] + ["    " + line for line in tree.st_code]
+def _assign_tail(node):
+    chars = charset.active()
+    # The negation circle CODESYS draws on the pin, as an "o" on the wire.
+    return chars["H"] * 2 + ("o " if node.negated else "> ") + (node.label or "?")
+
+
+def _render_fanout(outputs):
+    """One source driving several outputs: draw it once and branch.
+
+    This is how CODESYS shows it, and drawing the box once per output would
+    both misrepresent the program and double the width of the diff.
+    """
+    chars = charset.active()
+    source = _render(outputs[0].source)
+    # A short lead before the junction, so the branch is not welded to the box
+    # edge. padded() extends the wire row and pads the rest with spaces.
+    width = source.width + 2
+    lines = source.padded(width)
+
+    rows = [source.connect_row + index for index in range(len(outputs))]
+    while len(lines) <= rows[-1]:
+        lines.append(" " * width)
+
+    first, last = rows[0], rows[-1]
+    out = []
+    for row, line in enumerate(lines):
+        if row == first:
+            joint = chars["T_DOWN"] if len(rows) > 1 else chars["H"]
+        elif row == last:
+            joint = chars["BL"]
+        elif row in rows:
+            joint = chars["T_RIGHT"]
+        elif first < row < last:
+            joint = chars["V"]
+        else:
+            joint = " "
+        tail = _assign_tail(outputs[rows.index(row)]) if row in rows else ""
+        out.append(line + joint + tail)
+
+    return Block(out, first)
+
+
+def _shared_source(outputs):
+    """The single source every output hangs off, or None.
+
+    Identity, not equality: the parser memoises shared nodes, so two outputs
+    fed by one block hold the very same object.
+    """
+    if len(outputs) < 2:
+        return None
+    if not all(isinstance(output, Assign) for output in outputs):
+        return None
+    first = outputs[0].source
+    if first is None:
+        return None
+    return first if all(output.source is first for output in outputs) else None
+
+
+def render_network(network):
+    """Render one network, which may drive several outputs from one source."""
+    outputs = getattr(network, "outputs", [network])
+
+    if _shared_source(outputs) is not None:
+        return _render_fanout(outputs).lines
+
+    lines = []
+    for tree in outputs:
+        lines.extend(_render(tree).lines)
+        # An EXECUTE box's body is the logic; drawing the box without it would
+        # be an empty rectangle where a dozen lines of ST should be.
+        if isinstance(tree, Call) and tree.st_code:
+            lines = lines + [""] + ["    " + line for line in tree.st_code]
     return lines
 
 
@@ -205,14 +271,13 @@ def render_pou(pou):
         lines.append("(* no networks *)")
 
     for index, network in enumerate(pou.networks):
-        comment, tree = network
         header = "(* Network " + str(index + 1)
-        if comment:
+        if network.comment:
             # CODESYS comments usually already start with //, which would read
             # oddly nested inside an ST block comment.
-            header += ": " + comment.lstrip("/").strip()
+            header += ": " + network.comment.lstrip("/").strip()
         lines.append(header + " *)")
-        lines.extend(render_network(tree))
+        lines.extend(render_network(network))
         lines.append("")
 
     while lines and lines[-1] == "":

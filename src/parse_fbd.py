@@ -6,7 +6,7 @@ looking for sinks nothing else consumes - but the result is a tree of calls
 rather than a series/parallel chain.
 """
 
-from model import BLOCK, Assign, Call, Jump, Label, Node, Pou, Signal
+from model import BLOCK, Assign, Call, Jump, Label, Network, Node, Pou, Signal
 from plcopen import (
     block_connections,
     block_outputs,
@@ -103,7 +103,22 @@ def _negate(source):
     )
 
 
-def _build(node, by_id, visiting, via_pin=None):
+def _build(node, by_id, visiting, via_pin=None, memo=None):
+    """Build the tree feeding a node.
+
+    Results are memoised on (localId, pin) so a block feeding two outputs
+    yields the same object to both, which is what lets the renderers draw one
+    box with a branch instead of two identical boxes.
+    """
+    if memo is None:
+        memo = {}
+    key = (node.local_id, via_pin)
+    if key not in memo:
+        memo[key] = _build_node(node, by_id, visiting, via_pin, memo)
+    return memo[key]
+
+
+def _build_node(node, by_id, visiting, via_pin, memo):
     if node.local_id in visiting:
         return Signal("<cycle at %s>" % node.local_id)
     visiting = visiting | set([node.local_id])
@@ -114,7 +129,7 @@ def _build(node, by_id, visiting, via_pin=None):
             upstream = by_id.get(connection.ref_id)
             source = None
             if upstream is not None:
-                source = _build(upstream, by_id, visiting, connection.source_pin)
+                source = _build(upstream, by_id, visiting, connection.source_pin, memo)
             if connection.negated and source is not None:
                 # The bubble on the pin itself, not on what feeds it.
                 source = _negate(source)
@@ -141,7 +156,7 @@ def _build(node, by_id, visiting, via_pin=None):
         for connection in node.inputs:
             upstream = by_id.get(connection.ref_id)
             if upstream is not None:
-                source = _build(upstream, by_id, visiting, connection.source_pin)
+                source = _build(upstream, by_id, visiting, connection.source_pin, memo)
                 break
         if node.kind == OUT_VARIABLE:
             return Assign(node.label or "?", source, negated=node.negated)
@@ -160,32 +175,83 @@ def _build(node, by_id, visiting, via_pin=None):
     return Signal(node.label or "", negated=node.negated)
 
 
-def build_networks(nodes):
-    """Split a flat node list into (comment, tree) per network.
+def _component_finder(logic):
+    """Union-find over the wires, ignoring direction.
 
-    Comments are matched to networks by document order: a comment applies to
-    the sink that follows it, which is how CODESYS lays out the export.
+    Two outputs fed from one block belong to the same network, so grouping has
+    to follow wires backwards as well as forwards.
     """
+    parent = {}
+    for node in logic:
+        parent[node.local_id] = node.local_id
+
+    def find(item):
+        root = item
+        while parent[root] != root:
+            root = parent[root]
+        while parent[item] != root:
+            parent[item], item = root, parent[item]
+        return root
+
+    for node in logic:
+        for connection in node.inputs:
+            if connection.ref_id not in parent:
+                continue
+            left, right = find(node.local_id), find(connection.ref_id)
+            if left != right:
+                parent[left] = right
+    return find
+
+
+def build_networks(nodes):
+    """Group a flat node list into Networks.
+
+    One network per connected component, not one per sink. A block driving two
+    outVariables is a single network in the editor; splitting it produced two
+    networks with the whole shared expression written out twice, and threw the
+    numbering out against what a reviewer sees in CODESYS.
+    """
+    logic = [node for node in nodes if node.kind != COMMENT]
+
     by_id = {}
-    for node in nodes:
-        if node.kind != COMMENT:
-            by_id[node.local_id] = node
+    for node in logic:
+        by_id[node.local_id] = node
+
+    find = _component_finder(logic)
 
     consumed = set()
-    for node in nodes:
+    for node in logic:
         for connection in node.inputs:
             consumed.add(connection.ref_id)
 
-    networks = []
-    comment = ""
+    # A comment applies to the component whose first element follows it.
+    comments = {}
+    pending = ""
     for node in nodes:
         if node.kind == COMMENT:
-            comment = node.label or ""
+            pending = node.label or ""
             continue
+        root = find(node.local_id)
+        if root not in comments:
+            comments[root] = pending
+            pending = ""
+
+    # Shared upstream nodes must come back as the same object, so the
+    # renderers can tell a fan-out from two coincidentally equal expressions.
+    memo = {}
+    networks = []
+    by_root = {}
+    for node in logic:
         if node.local_id in consumed or node.kind not in SINK_KINDS:
             continue
-        networks.append((comment, _build(node, by_id, set())))
-        comment = ""
+        tree = _build(node, by_id, set(), None, memo)
+        root = find(node.local_id)
+        if root in by_root:
+            by_root[root].outputs.append(tree)
+        else:
+            network = Network(comment=comments.get(root, ""), outputs=[tree])
+            by_root[root] = network
+            networks.append(network)
     return networks
 
 

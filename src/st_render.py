@@ -142,8 +142,14 @@ def _operator_expression(node, values):
     return "%s(%s)" % (node.type_name or "?", ", ".join(values))
 
 
-def _fbd_value(node, statements):
-    """Value of a node as ST text, appending any statements it needs first."""
+def _fbd_value(node, statements, emitted=None):
+    """Value of a node as ST text, appending any statements it needs first.
+
+    ``emitted`` maps an already-rendered node to its value, so a block
+    feeding two outputs is called once rather than once per output.
+    """
+    if emitted is None:
+        emitted = {}
     if node is None:
         return ""
 
@@ -155,7 +161,7 @@ def _fbd_value(node, statements):
         return ""
 
     if isinstance(node, Jump):
-        condition = _fbd_value(node.condition, statements)
+        condition = _fbd_value(node.condition, statements, emitted)
         if condition:
             statements.append("IF %s THEN (* JMP %s *) END_IF" % (condition, node.target))
         else:
@@ -163,18 +169,24 @@ def _fbd_value(node, statements):
         return ""
 
     if isinstance(node, Assign):
-        value = _fbd_value(node.source, statements) or "FALSE"
+        value = _fbd_value(node.source, statements, emitted) or "FALSE"
         if node.negated:
             value = "NOT " + _operand(value)
         statements.append("%s := %s;" % (node.label or "?", value))
         return node.label or "?"
 
     if isinstance(node, Call):
+        if id(node) in emitted:
+            return emitted[id(node)]
         pairs = []
         for pin, source in node.inputs:
-            value = _fbd_value(source, statements)
+            value = _fbd_value(source, statements, emitted)
             if value:
                 pairs.append((pin, value))
+
+        def remember(value):
+            emitted[id(node)] = value
+            return value
 
         if node.st_code:
             # An EXECUTE box is inline ST already, so emit it as itself rather
@@ -186,7 +198,7 @@ def _fbd_value(node, statements):
                 statements.append("END_IF")
             else:
                 statements.extend(node.st_code)
-            return ""
+            return remember("")
 
         if node.is_operator:
             # Operators and functions have no instance to call, so they inline
@@ -194,7 +206,7 @@ def _fbd_value(node, statements):
             expression = _operator_expression(node, [value for _pin, value in pairs])
             if node.active_output in node.negated_outputs:
                 expression = "NOT " + _operand(expression)
-            return expression
+            return remember(expression)
 
         name = node.instance_name
         statements.append("%s(%s);" % (name, ", ".join("%s := %s" % (pin, value) for pin, value in pairs)))
@@ -208,18 +220,27 @@ def _fbd_value(node, statements):
         result = (name + "." + node.active_output) if node.active_output else name
         if node.active_output in node.negated_outputs:
             result = "NOT " + result
-        return result
+        return remember(result)
 
     return "?"
 
 
-def network_to_statements(tree):
+def network_to_statements(network):
+    """Statements for one network, which may drive several outputs.
+
+    The shared logic is emitted once: a function block feeding two outputs is
+    called once in the program, so calling it twice here would misrepresent
+    it. Plain expressions still repeat, which is what ST would say anyway.
+    """
     statements = []
-    value = _fbd_value(tree, statements)
-    if not statements and value:
-        # A bare expression with nothing to assign it to - keep it visible
-        # rather than dropping the network entirely.
-        statements.append("(* " + value + " *)")
+    emitted = {}
+    for tree in getattr(network, "outputs", [network]):
+        before = len(statements)
+        value = _fbd_value(tree, statements, emitted)
+        if len(statements) == before and value:
+            # A bare expression with nothing to assign it to - keep it visible
+            # rather than dropping it entirely.
+            statements.append("(* " + value + " *)")
     return statements
 
 
@@ -241,9 +262,8 @@ def render_pou(pou):
         lines.append("")
 
     for index, network in enumerate(pou.networks):
-        comment, tree = network
-        lines.append(_network_header(index, comment))
-        lines.extend(network_to_statements(tree))
+        lines.append(_network_header(index, network.comment))
+        lines.extend(network_to_statements(network))
         lines.append("")
 
     if not pou.rungs and not pou.networks:

@@ -228,6 +228,23 @@ class Call(object):
         return "Call(%r, %r)" % (self.type_name, self.instance_name)
 
 
+class Network(object):
+    """One FBD network: a comment, and the outputs its logic drives.
+
+    A network can drive several outputs from shared logic - CODESYS draws that
+    as one box with the wire branching. Treating each output as its own
+    network duplicates the shared expression and makes the numbering disagree
+    with the editor, which is what a reviewer compares against.
+    """
+
+    def __init__(self, comment="", outputs=None):
+        self.comment = comment
+        self.outputs = outputs if outputs is not None else []
+
+    def __repr__(self):
+        return "Network(%r, %d outputs)" % (self.comment, len(self.outputs))
+
+
 class Assign(object):
     """An outVariable: a network whose result is stored into a variable.
 

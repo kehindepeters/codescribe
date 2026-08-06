@@ -80,7 +80,7 @@ check_equal("constant initial value", pou.variables[0].initial_value, "5000")
 check_equal("namespaced derived type", pou.variables[1].type_name, "ifmIOcommon.SystemSupply")
 
 # Comments carry the network's intent and nest their text in an xhtml element.
-comment1, tree1 = pou.networks[0]
+comment1, tree1 = pou.networks[0].comment, pou.networks[0].outputs[0]
 check("network 1 comment is captured", comment1.startswith("// Function Block to monitor supply voltage"))
 
 check("network 1 is a call", isinstance(tree1, Call))
@@ -102,7 +102,7 @@ outputs = dict(tree1.outputs)
 check_equal("output assignment is captured", outputs["uiOutVoltage"], "uiCurrSupplyVolt")
 
 # Network 2 nests three calls: GT -> TOF -> SupplySwitch.
-comment2, tree2 = pou.networks[1]
+comment2, tree2 = pou.networks[1].comment, pou.networks[1].outputs[0]
 check_equal("network 2 root", tree2.instance_name, "fbSupplySwitch")
 tof = tree2.inputs[1][1]
 check_equal("nested TOF", tof.instance_name, "TOF_0")
@@ -189,13 +189,13 @@ check("flow: the jump target is drawn", any(">> END" in line for line in flow_ar
 check("flow: the label is shown", any("(* label: END *)" in line for line in flow_st))
 
 # negated="true" on an inVariable inverts the logic if it is ignored.
-guard = flow.networks[0][1]
+guard = flow.networks[0].outputs[0]
 check_equal("flow: negation reaches the tree", guard.condition.inputs[0][1].negated, True)
 check_equal("flow: negation renders", guard.condition.inputs[0][1].text, "NOT xInitDone")
 check("flow: negation survives into ST", any("(NOT xInitDone) OR" in line for line in flow_st))
 
 # An EXECUTE box is nothing but inline ST; drawing the box alone loses it all.
-execute = flow.networks[3][1]
+execute = flow.networks[3].outputs[0]
 check_equal("flow: inline ST is captured", len(execute.st_code), 4)
 check("flow: inline ST reaches the ST output", any("Status.Faulted := FALSE;" in line for line in flow_st))
 # The EN pin genuinely guards the box, so it has to show up as a condition
@@ -254,6 +254,49 @@ check("fidelity: negated compound expression keeps its grouping", any("xGuard :=
 # Expressions are free-form ST and are routinely typed without spaces; NOT
 # still binds above the comparison, so "NOT iCount>5" states (NOT iCount)>5.
 check("fidelity: spaceless compound keeps its grouping", any("xHot := NOT (iCount>5);" in line for line in fid_st))
+
+
+# --- fan-out ---------------------------------------------------------------
+
+# One source driving several outputs is a single network in the editor.
+# Treating each output as its own network split every one of them in two and
+# duplicated the shared expression, so the numbering disagreed with CODESYS.
+FANOUT = os.path.join(HERE, "fixtures", "fbd_fanout.plcopen.xml")
+fan = parse_fbd.parse_pous(FANOUT)[0]
+fan_st = st_render.render_pou(fan)
+fan_art = fbd_render.render_pou(fan)
+
+check_equal("fanout: three networks, not five", len(fan.networks), 3)
+check_equal("fanout: the OR drives two outputs", len(fan.networks[0].outputs), 2)
+check_equal("fanout: the timer drives two outputs", len(fan.networks[1].outputs), 2)
+check_equal("fanout: a plain network keeps one", len(fan.networks[2].outputs), 1)
+
+# Both outputs of a network sit under its one header, with its one comment.
+header_rows = [row for row, line in enumerate(fan_st) if line.startswith("(* Network")]
+check_equal("fanout: three headers, not five", len(header_rows), 3)
+check("fanout: the comment lands on the network", "Conveyor off is the opposite" in fan_st[header_rows[0]])
+check_equal(
+    "fanout: both stores share a header",
+    fan_st[header_rows[0] + 1 : header_rows[0] + 3],
+    [
+        "Flags.ConvOn := Flags.FwdSolOn OR Flags.RevSolOn;",
+        "Flags.ConvOff := NOT (Flags.FwdSolOn OR Flags.RevSolOn);",
+    ],
+)
+
+# The sharper case: the block is called once in the program, so emitting the
+# call per output would misstate what runs.
+check_equal("fanout: the block is called once", len([l for l in fan_st if l.startswith("TON_0(")]), 1)
+check("fanout: both stores are still made", "Status.Done := TON_0.Q;" in fan_st and "Status.Latched := TON_0.Q;" in fan_st)
+
+# The shared source is drawn once and branched, not drawn per output.
+check_equal("fanout: one OR box is drawn", len([l for l in fan_art if "In1   Out1" in l]), 1)
+check("fanout: the branch is drawn", any(U["T_DOWN"] in l and "Flags.ConvOn" in l for l in fan_art))
+check("fanout: the negated leg keeps its bubble", any(U["BL"] in l and "o Flags.ConvOff" in l for l in fan_art))
+
+# Identity, not equality, is what tells a fan-out from two equal expressions.
+first, second = fan.networks[0].outputs
+check("fanout: shared nodes are one object", first.source is second.source)
 
 
 # --- language dispatch -----------------------------------------------------
