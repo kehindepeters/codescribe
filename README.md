@@ -63,14 +63,9 @@ Actions and Transitions export as `.st` with the kind encoded in the filename (`
 
 ### Reading graphical POUs
 
-Ladder and Function Block Diagram POUs have no textual implementation, so they export as native xml that git can store but nobody can review. Alongside that xml, CODESCRIBE writes a `.txt` holding the equivalent Structured Text followed by a diagram:
+Ladder and Function Block Diagram POUs have no textual implementation, so they export as native xml that git can store but nobody can review. Alongside that xml, CODESCRIBE writes a `.txt` holding the declaration and a diagram of each network:
 
 ```
-(* Network 2 *)
-TON_0(IN := PowerOn, PT := T#5S);
-CTU_0(CU := TON_0.Q, RESET := PowerOff, PV := 10);
-IF CTU_0.Q THEN PowerOff := FALSE; END_IF
-
 (* Network 2 *)
 │               TON_0 : TON           CTU_0 : CTU
 │   PowerOn  ┌───────────────┐  ┌──────────────────────┐  PowerOff
@@ -84,10 +79,13 @@ This file is **derived and read-only**. The native xml remains the only thing `I
 
 SFC and CFC POUs are not yet rendered; they export as native xml alone.
 
-To render an exported PLCopen file by hand, or to get plain ASCII instead of box drawing:
+Networks are numbered as CODESYS numbers them, so a network in the file lines up with the one in the editor.
+
+To render an exported PLCopen file by hand, to get plain ASCII instead of box drawing, or to see the equivalent Structured Text (which the export does not write, since showing each network twice in two notations reads worse than showing it once):
 
 ```
-python tools/ladder/render.py --format st --charset ascii MyPou.xml
+python tools/ladder/render.py --charset ascii MyPou.xml
+python tools/ladder/render.py --format st MyPou.xml
 ```
 
 Visualisations export as `<name>.vis.xml`, so a `Main` visualisation cannot collide with a `Main` POU.

@@ -97,10 +97,13 @@ try:
     check_equal("export_xml is asked for a single object", pou.export_calls[0][1], False)
 
     content = read(base + ".txt")
-    check("derived file leads with ST", content.startswith("PROGRAM LD_TEST"))
-    check("derived file contains the ST equivalent", "IF CTU_0.Q THEN PowerOff := FALSE; END_IF" in content)
+    check("derived file leads with the declaration", content.startswith("PROGRAM LD_TEST"))
+    # Diagram only. Rendering the same network twice, once as ST and once as a
+    # diagram, made the files harder to read rather than easier.
+    check("no ST rendering is written", "IF CTU_0.Q THEN PowerOff := FALSE; END_IF" not in content)
+    check("networks are numbered", "(* Network 1 *)" in content)
     check("derived file contains the diagram", "TON_0 : TON" in content)
-    check("declaration is not repeated", content.count("END_VAR") == 1)
+    check("the declaration appears once", content.count("END_VAR") == 1)
     check("derived file ends with a newline", content.endswith("\n"))
 
     # The temp PLCopen file is staged outside the export folder, so nothing but

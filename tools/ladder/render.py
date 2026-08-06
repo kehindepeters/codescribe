@@ -3,9 +3,9 @@
 
     python tools/ladder/render.py [options] <file.xml> [...]
 
-    --format art|st|both    art  diagrams, close to the CODESYS layout
-                            st   equivalent Structured Text - diffs and greps
-                            both ST first, then the diagram (the default)
+    --format art|st|both    art  diagrams, as the export writes them (default)
+                            st   equivalent Structured Text
+                            both the ST followed by the diagram
 
     --charset unicode|ascii box-drawing characters (the default), or plain
                             ASCII for terminals and diff viewers that mangle
@@ -46,7 +46,7 @@ def _pous(path):
     return found
 
 
-def render_file(path, output_format="both"):
+def render_file(path, output_format="art"):
     lines = []
     for pou, art_renderer in _pous(path):
         if output_format in ("st", "both"):
@@ -79,7 +79,7 @@ def write(lines, stream=None):
 
 
 def main(argv):
-    output_format = "both"
+    output_format = "art"
     paths = []
     index = 0
     while index < len(argv):

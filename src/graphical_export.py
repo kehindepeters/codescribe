@@ -24,7 +24,6 @@ import ld_render
 import parse_fbd
 import parse_ld
 import plcopen
-import st_render
 from util import open_utf8
 
 # Suffix for the derived file. Deliberately not .st: these are not importable
@@ -80,14 +79,17 @@ def _render_pous(plcopen_path):
 
 
 def render_plcopen(plcopen_path):
-    """Render every renderable POU in a PLCopen file. [] if there are none."""
+    """Render every renderable POU in a PLCopen file. [] if there are none.
+
+    The declaration and the diagram only. An equivalent-ST rendering was
+    written alongside these at first, but showing the same network twice in
+    two notations made the files harder to read rather than easier. The ST
+    emitter is still there and reachable from tools/ladder/render.py for
+    anyone who wants it; it is just not what the export writes.
+    """
     lines = []
     for pou, art_renderer in _render_pous(plcopen_path):
-        lines.extend(st_render.render_pou(pou))
-        lines.append(u"")
-        # The diagram repeats the declaration, which is noise the second time.
-        declaration_length = len(ld_render.render_declaration(pou))
-        lines.extend(art_renderer.render_pou(pou)[declaration_length:])
+        lines.extend(art_renderer.render_pou(pou))
         lines.append(u"")
 
     while lines and lines[-1] == u"":
