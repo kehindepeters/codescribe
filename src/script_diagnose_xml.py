@@ -143,10 +143,65 @@ def probe_export(ET):
             os.remove(path)
 
 
+def probe_declarations():
+    """Which export_xml call binds, and where the declaration text lands.
+
+    export_xml is a .NET overload set. IronPython resolves it by signature, so
+    a keyword call can fail to bind where the same call positionally succeeds
+    - and the failure is a TypeError that looks exactly like "this build has
+    no such overload". Only trying each shape distinguishes them.
+    """
+    print("--- plaintext declarations ---")
+    project = scriptengine.projects.primary
+    if project is None:
+        report("project", "none open")
+        return
+
+    target = find_graphical_object(project)
+    if target is None:
+        report("graphical object", "none found")
+        return
+    report("object", target.get_name())
+
+    shapes = (
+        ("positional (path, rec, folders, plaintext)", lambda o, p: o.export_xml(p, False, False, True)),
+        ("keyword", lambda o, p: o.export_xml(path=p, recursive=False, declarations_as_plaintext=True)),
+        ("reporter-first", lambda o, p: o.export_xml(None, p, False, False, True)),
+        ("plain (no plaintext)", lambda o, p: o.export_xml(p, False)),
+    )
+
+    for label, call in shapes:
+        handle, path = tempfile.mkstemp(suffix=".plcopen.xml")
+        os.close(handle)
+        try:
+            call(target, path)
+            f = open(path, "rb")
+            try:
+                content = f.read()
+            finally:
+                f.close()
+            # Any addData under the interface is what carries the declaration.
+            marker = content.find(b"</interface>")
+            head = content[:marker] if marker > 0 else content
+            has_add_data = b"<addData" in head
+            report(label, "OK, %d bytes, interface addData: %s" % (len(content), has_add_data))
+            if has_add_data:
+                start = head.find(b"<addData")
+                report("  interface addData", repr(head[start : start + 400]))
+        except TypeError as error:
+            report(label, "no such overload (%s)" % error)
+        except Exception as error:
+            report(label, "FAILED " + repr(error))
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
+
+
 print("=== codescribe xml diagnosis ===")
 print_python_version()
 element_tree = probe_parser()
 probe_export(element_tree)
+probe_declarations()
 print("--- sys.path ---")
 for entry in sys.path:
     print("  " + str(entry))

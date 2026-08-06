@@ -3,7 +3,7 @@
 
 Graphical POUs (LD, FBD, SFC, CFC) have no textual implementation, so they
 export as CODESYS native xml, which git can store but nobody can review. This
-adds a derived .txt next to it: the ST equivalent followed by the diagram.
+adds a derived .txt next to it: the declaration and a diagram per network.
 
 The .txt is READ-ONLY as far as CODESCRIBE is concerned. The native xml stays
 the only thing Import From Files reads, so the round trip is unaffected and
@@ -39,6 +39,7 @@ EMPTY_STATS = {
     "export_xml_seconds": 0.0,
     "parse_seconds": 0.0,
     "draw_seconds": 0.0,
+    "verbatim_declarations": 0,
 }
 
 STATS = dict(EMPTY_STATS)
@@ -59,7 +60,7 @@ def summary():
     if not STATS["rendered"] and not STATS["skipped"]:
         return None
     total = STATS["export_xml_seconds"] + STATS["parse_seconds"] + STATS["draw_seconds"]
-    return "Rendered %d graphical POUs in %.1fs (%.1fs CODESYS export_xml, %.1fs parsing, %.1fs drawing); skipped %d" % (
+    line = "Rendered %d graphical POUs in %.1fs (%.1fs CODESYS export_xml, %.1fs parsing, %.1fs drawing); skipped %d" % (
         STATS["rendered"],
         total,
         STATS["export_xml_seconds"],
@@ -67,6 +68,12 @@ def summary():
         STATS["draw_seconds"],
         STATS["skipped"],
     )
+    # Falling back to the rebuilt declaration is silent otherwise, and it
+    # costs every comment, pragma and attribute in the file. Say so.
+    if STATS["rendered"] and not STATS["verbatim_declarations"]:
+        line += "\n         NOTE: no POU carried a plaintext declaration, so comments, pragmas"
+        line += " and attributes are missing from every declaration."
+    return line
 
 
 # Body language -> (parser, diagram renderer). SFC and CFC are absent, so they
@@ -110,6 +117,8 @@ def render_plcopen(plcopen_path):
     started = time.time()
     lines = []
     for pou, art_renderer in pous:
+        if pou.declaration_text:
+            STATS["verbatim_declarations"] += 1
         lines.extend(art_renderer.render_pou(pou))
         lines.append(u"")
 
@@ -117,6 +126,18 @@ def render_plcopen(plcopen_path):
         lines.pop()
     STATS["draw_seconds"] += time.time() - started
     return lines
+
+
+# Ways of asking for plaintext declarations, most likely to bind first.
+# ScriptEngine methods are .NET overloads, and IronPython resolves them by
+# signature: keyword arguments frequently fail to bind where the same call
+# positionally succeeds. The documented overload is
+# export_xml(path, recursive, export_folder_structure, declarations_as_plaintext).
+_EXPORT_ATTEMPTS = (
+    lambda obj, path: obj.export_xml(path, False, False, True),
+    lambda obj, path: obj.export_xml(path=path, recursive=False, declarations_as_plaintext=True),
+    lambda obj, path: obj.export_xml(None, path, False, False, True),
+)
 
 
 def _export_plcopen(obj, path):
@@ -131,10 +152,16 @@ def _export_plcopen(obj, path):
     overload matches - falls back to the plain call rather than losing the
     rendering altogether.
     """
-    try:
-        obj.export_xml(path=path, recursive=False, declarations_as_plaintext=True)
-    except TypeError:
-        obj.export_xml(path=path, recursive=False)
+    for attempt in _EXPORT_ATTEMPTS:
+        try:
+            attempt(obj, path)
+            return
+        except TypeError:
+            # No matching overload on this build. Try the next shape.
+            continue
+    # Nothing with plaintext bound, so fall back to the lossy declaration
+    # rather than losing the rendering.
+    obj.export_xml(path=path, recursive=False)
 
 
 def _remove_quietly(path):
