@@ -75,6 +75,8 @@ Ladder and Function Block Diagram POUs have no textual implementation, so they e
 │                               └──────────────────────┘
 ```
 
+The declaration is copied from the original CODESYS declaration source, preserving comments, pragmas, safety-qualified types, and literal spelling. The diagram is derived from PLCopen XML. On older CODESYS versions where the plaintext declaration is unavailable, the declaration is rebuilt from the structured interface and the export summary warns that comments, pragmas, or exact formatting may be missing.
+
 This file is **derived and read-only**. The native xml remains the only thing `Import From Files` reads, so editing the `.txt` changes nothing — it exists to make diffs and code review possible. Layout comes from how the elements are wired, not from their coordinates, so moving a block in the CODESYS editor produces no diff.
 
 SFC and CFC POUs are not yet rendered; they export as native xml alone.
