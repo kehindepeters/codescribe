@@ -48,10 +48,12 @@ class FakePou(object):
     exactly what the real call does from this module's point of view.
     """
 
-    def __init__(self, name, source=None):
+    def __init__(self, name, source=None, declaration=None):
         self._name = name
         self._source = source
         self.export_calls = []
+        if declaration is not None:
+            self.textual_declaration = type("TextualDeclaration", (object,), {"text": declaration})()
 
     def get_name(self):
         return self._name
@@ -152,6 +154,22 @@ try:
     graphical_export.reset_stats()
     check_equal("reset clears the counts", graphical_export.STATS["rendered"], 0)
     check_equal("nothing to report after a reset", graphical_export.summary(), None)
+
+    source_declaration = """{attribute 'qualified_only'}
+PROGRAM LD_TEST
+VAR
+    S_xSafe : SAFEBOOL;
+    // OUT0200 is the hardware channel identifier.
+    uiChannel : UINT := 0200;
+END_VAR"""
+    source_pou = FakePou("LD_TEST", os.path.join(FIXTURES, "LDTesting.xml"), source_declaration)
+    source_base = os.path.join(workspace, "SOURCE")
+    check("source declaration is rendered verbatim", graphical_export.write_rendered_text(source_pou, source_base) is True)
+    source_content = read(source_base + ".txt")
+    check("safety type survives", "S_xSafe : SAFEBOOL;" in source_content)
+    check("declaration comment survives", "OUT0200 is the hardware channel identifier." in source_content)
+    check("padded literal survives", "UINT := 0200;" in source_content)
+    check("declaration pragma survives", "{attribute 'qualified_only'}" in source_content)
 
     # --- a rendering failure must not fail the export -----------------------
 

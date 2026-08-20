@@ -101,7 +101,7 @@ def _render_pous(plcopen_path):
     return found
 
 
-def render_plcopen(plcopen_path):
+def render_plcopen(plcopen_path, declaration_text=None):
     """Render every renderable POU in a PLCopen file. [] if there are none.
 
     The declaration and the diagram only. An equivalent-ST rendering was
@@ -112,6 +112,8 @@ def render_plcopen(plcopen_path):
     """
     started = time.time()
     pous = _render_pous(plcopen_path)
+    if declaration_text is not None and pous:
+        pous[0][0].declaration_text = declaration_text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
     STATS["parse_seconds"] += time.time() - started
 
     started = time.time()
@@ -201,7 +203,8 @@ def write_rendered_text(obj, base_path):
         STATS["export_xml_seconds"] += time.time() - started
 
         # render_plcopen accounts for its own parse and draw time.
-        lines = render_plcopen(temp_path)
+        textual_declaration = getattr(getattr(obj, "textual_declaration", None), "text", None)
+        lines = render_plcopen(temp_path, textual_declaration)
         if not lines:
             STATS["skipped"] += 1
             return False
