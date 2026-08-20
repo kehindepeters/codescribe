@@ -273,9 +273,8 @@ def render_pou(pou):
     for index, network in enumerate(pou.networks):
         header = "(* Network " + str(index + 1)
         if network.comment:
-            # CODESYS comments usually already start with //, which would read
-            # oddly nested inside an ST block comment.
-            header += ": " + network.comment.lstrip("/").strip()
+            comment = network.comment.replace("\r", " ").replace("\n", " ").replace("*)", "* )")
+            header += ": " + comment.lstrip("/").strip()
         lines.append(header + " *)")
         lines.extend(render_network(network))
         lines.append("")

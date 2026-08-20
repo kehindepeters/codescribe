@@ -24,7 +24,7 @@ import fbd_render  # noqa: E402
 import parse_ld  # noqa: E402
 import parse_fbd  # noqa: E402
 import st_render  # noqa: E402
-from model import Call, Signal  # noqa: E402
+from model import Call, Network, Pou, Signal  # noqa: E402
 from render import write  # noqa: E402
 
 # Referenced through the charset table rather than as literal glyphs: this
@@ -82,6 +82,18 @@ check_equal("namespaced derived type", pou.variables[1].type_name, "ifmIOcommon.
 # Comments carry the network's intent and nest their text in an xhtml element.
 comment1, tree1 = pou.networks[0].comment, pou.networks[0].outputs[0]
 check("network 1 comment is captured", comment1.startswith("// Function Block to monitor supply voltage"))
+
+hostile_comment = "// first\nsecond *) third"
+check_equal(
+    "network comments cannot break generated block comments",
+    fbd_render.render_pou(Pou("HOSTILE", "program", networks=[Network(hostile_comment, [Signal("x")])]))[2],
+    "(* Network 1: first second * ) third *)",
+)
+check_equal(
+    "ST network comments cannot break generated block comments",
+    st_render._network_header(0, hostile_comment),
+    "(* Network 1: first second * ) third *)",
+)
 
 check("network 1 is a call", isinstance(tree1, Call))
 check_equal("network 1 instance", tree1.instance_name, "fbSystemSupply")

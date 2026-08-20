@@ -247,6 +247,7 @@ def network_to_statements(network):
 def _network_header(index, comment):
     header = "(* Network " + str(index + 1)
     if comment:
+        comment = comment.replace("\r", " ").replace("\n", " ").replace("*)", "* )")
         header += ": " + comment.lstrip("/").strip()
     return header + " *)"
 

@@ -13,8 +13,7 @@
 
 Output is written as UTF-8 regardless of the console encoding.
 
-Prototype only - not yet wired into the CODESYS export path. Ladder and
-Function Block Diagram are supported; SFC bodies are skipped.
+Ladder and Function Block Diagram are supported; SFC bodies are skipped.
 """
 
 from __future__ import print_function, unicode_literals

@@ -155,6 +155,15 @@ try:
     check_equal("reset clears the counts", graphical_export.STATS["rendered"], 0)
     check_equal("nothing to report after a reset", graphical_export.summary(), None)
 
+    graphical_export.STATS["rendered"] = 1
+    graphical_export.STATS["verbatim_declarations"] = 1
+    graphical_export.STATS["fallback_declarations"] = 1
+    check(
+        "mixed declaration sources are reported",
+        "1 POU declaration(s) were rebuilt" in graphical_export.summary(),
+    )
+    graphical_export.reset_stats()
+
     source_declaration = """{attribute 'qualified_only'}
 PROGRAM LD_TEST
 VAR

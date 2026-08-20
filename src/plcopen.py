@@ -222,12 +222,23 @@ def _add_data_declaration(owner):
     add_data = find_child(owner, "addData")
     if add_data is None:
         return None
+    candidates = []
     for element in add_data.iter():
         text = element.text
-        # Both markers, so a loose structural match cannot catch prose that
-        # merely mentions a variable.
         if text and "VAR" in text and "END_VAR" in text:
-            return text.replace("\r\n", "\n").strip("\n")
+            candidates.append((element, text.replace("\r\n", "\n").strip("\n")))
+    if not candidates:
+        return None
+
+    named = []
+    for element, text in candidates:
+        name = (element.get("name") or "").lower()
+        if "interfaceasplaintext" in name or "declaration" in name:
+            named.append(text)
+    if len(named) == 1:
+        return named[0]
+    if len(candidates) == 1:
+        return candidates[0][1]
     return None
 
 

@@ -40,6 +40,7 @@ EMPTY_STATS = {
     "parse_seconds": 0.0,
     "draw_seconds": 0.0,
     "verbatim_declarations": 0,
+    "fallback_declarations": 0,
 }
 
 STATS = dict(EMPTY_STATS)
@@ -70,9 +71,11 @@ def summary():
     )
     # Falling back to the rebuilt declaration is silent otherwise, and it
     # costs every comment, pragma and attribute in the file. Say so.
-    if STATS["rendered"] and not STATS["verbatim_declarations"]:
-        line += "\n         NOTE: no POU carried a plaintext declaration, so comments, pragmas"
-        line += " and attributes are missing from every declaration."
+    if STATS["fallback_declarations"]:
+        line += "\n         NOTE: %d POU declaration(s) were rebuilt from structured XML; comments," % STATS[
+            "fallback_declarations"
+        ]
+        line += " pragmas and attributes may be missing from those declarations."
     return line
 
 
@@ -121,6 +124,8 @@ def render_plcopen(plcopen_path, declaration_text=None):
     for pou, art_renderer in pous:
         if pou.declaration_text:
             STATS["verbatim_declarations"] += 1
+        else:
+            STATS["fallback_declarations"] += 1
         lines.extend(art_renderer.render_pou(pou))
         lines.append(u"")
 

@@ -422,6 +422,14 @@ check_equal(
     DECLARATION,
 )
 
+DECOY = '<data name="vendor-metadata"><text>VAR fake END_VAR</text></data>'
+AMBIGUOUS = PLAINTEXT_INTERFACE.replace("<addData>", "<addData>" + DECOY, 1)
+check_equal(
+    "ambiguous declaration-like addData is rejected",
+    parse_pous(with_interface(AMBIGUOUS))[0].declaration_text,
+    None,
+)
+
 
 # --- real CODESYS export ---------------------------------------------------
 
