@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hand-authored, modelled on the slice of a native CODESYS export that
+  native_networks.read_networks consumes: <List2 Name="NetworkList"> with one
+  entry per network, each carrying OutCommented, Comment and NetworkItems.
+
+  Three networks against LDTesting.xml's two parsed rungs: the middle one is
+  out-commented, which the PLCopen export silently omits. Aligning against
+  this list must keep the editor's numbers - 1, 2, 3 - with a placeholder at
+  2, instead of renumbering the second rung down to 2.
+-->
+<ExportFile>
+  <StructuredView>
+    <Single Name="ImplementationObject">
+      <Single Name="NetworkListComment" Type="string"></Single>
+      <List2 Name="NetworkList">
+        <Single Method="IArchivable">
+          <Single Name="OutCommented" Type="bool">False</Single>
+          <Single Name="Comment" Type="string">// first rung</Single>
+          <Single Name="Label" Type="string"></Single>
+          <List2 Name="NetworkItems">
+            <Single Method="IArchivable">item</Single>
+          </List2>
+        </Single>
+        <Single Method="IArchivable">
+          <Single Name="OutCommented" Type="bool">True</Single>
+          <Single Name="Comment" Type="string">// disabled logic</Single>
+          <Single Name="Label" Type="string"></Single>
+          <List2 Name="NetworkItems">
+            <Single Method="IArchivable">item</Single>
+          </List2>
+        </Single>
+        <Single Method="IArchivable">
+          <Single Name="OutCommented" Type="bool">False</Single>
+          <Single Name="Comment" Type="string"></Single>
+          <Single Name="Label" Type="string"></Single>
+          <List2 Name="NetworkItems">
+            <Single Method="IArchivable">item</Single>
+          </List2>
+        </Single>
+      </List2>
+    </Single>
+  </StructuredView>
+</ExportFile>

@@ -422,14 +422,65 @@ def find_pous(root):
     return [elem for elem in root.iter() if tag(elem) == "pou"]
 
 
+def _language_body(owner):
+    """(language, body_elem) for an element's own <body>, or None."""
+    body = find_child(owner, "body")
+    if body is None:
+        return None
+    for child in body:
+        if tag(child) in BODY_LANGUAGES:
+            return tag(child), child
+    return None
+
+
 def iter_bodies(source):
     """Yield (pou_elem, language, body_elem) for every POU with an implementation."""
     root = xmlbackend.parse(read_document(source))
     for elem in find_pous(root):
-        body = find_child(elem, "body")
-        if body is None:
+        found = _language_body(elem)
+        if found is not None:
+            yield elem, found[0], found[1]
+
+
+# Sub-POU elements that carry a name and a body of their own. An SFC body's
+# inline <action> blocks share the tag but carry a localId instead of a name,
+# so requiring the name to match keeps them out.
+MEMBER_TAGS = ("action", "transition", "method")
+
+
+def iter_member_bodies(source, member_name):
+    """Yield (pou_elem, language, body_elem) for a named sub-POU member.
+
+    PLCopen has no top-level element for an action or transition, so CODESYS
+    exports the *parent* POU with the member nested inside it - parent body
+    included. Rendering the pou's own <body> from such a file draws the
+    parent's networks under the member's filename, which is how the HMI
+    PLC_PRG.ACT_* dumps came to describe a different POU than the .xml
+    beside them.
+
+    The member is found by name: either a pou element named for the member
+    itself (how some builds export methods), or an action/transition/method
+    element with a matching name attribute anywhere inside a pou. IEC
+    identifiers are case-insensitive, so the comparison is too. Yielding
+    nothing at all is the honest outcome when the export simply does not
+    carry the member's body - the caller then writes no rendering rather
+    than a foreign one.
+    """
+    root = xmlbackend.parse(read_document(source))
+    wanted = member_name.lower()
+    for pou_elem in find_pous(root):
+        pou_name = (pou_elem.get("name") or "").lower()
+        if pou_name == wanted or pou_name.endswith("." + wanted):
+            found = _language_body(pou_elem)
+            if found is not None:
+                yield pou_elem, found[0], found[1]
             continue
-        for child in body:
-            if tag(child) in BODY_LANGUAGES:
-                yield elem, tag(child), child
-                break
+        for elem in pou_elem.iter():
+            if tag(elem) not in MEMBER_TAGS:
+                continue
+            elem_name = (elem.get("name") or "").lower()
+            if elem_name != wanted and not elem_name.endswith("." + wanted):
+                continue
+            found = _language_body(elem)
+            if found is not None:
+                yield pou_elem, found[0], found[1]

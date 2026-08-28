@@ -311,6 +311,91 @@ first, second = fan.networks[0].outputs
 check("fanout: shared nodes are one object", first.source is second.source)
 
 
+# --- native alignment ------------------------------------------------------
+
+# The native export's network list is the numbering authority: out-commented
+# networks are absent from the PLCopen export, so without it the rendering
+# renumbers everything after them away from what the reviewer sees in CODESYS.
+import native_networks  # noqa: E402
+from model import Label  # noqa: E402
+
+merged_pou = Pou(
+    "MERGED",
+    "program",
+    networks=[Network("// one", [Signal("a")]), Network("// three", [Signal("b")])],
+)
+merged_pou.native_networks = [
+    native_networks.NativeNetwork(comment="// one"),
+    native_networks.NativeNetwork(out_commented=True, comment="// two"),
+    native_networks.NativeNetwork(comment="// three"),
+]
+merged_art = fbd_render.render_pou(merged_pou)
+check("merge: first network keeps its number", "(* Network 1: one *)" in merged_art)
+check("merge: the out-commented network keeps its number", "(* Network 2: two *)" in merged_art)
+check(
+    "merge: the out-commented network is marked",
+    any("out-commented in CODESYS" in line for line in merged_art),
+)
+check("merge: the network after it keeps its number", "(* Network 3: three *)" in merged_art)
+check("merge: success is flagged", getattr(merged_pou, "native_merged", False) is True)
+
+# A network's label is exported as a free-standing element that parses into a
+# phantom network of its own - one extra header, and every later network
+# misnumbered upward. The native list knows the label belongs to the network
+# after it, so both fold under one header.
+labelled_pou = Pou(
+    "LABELLED",
+    "program",
+    networks=[Network("", [Label("TOP")]), Network("// body", [Signal("x")])],
+)
+labelled_pou.native_networks = [native_networks.NativeNetwork(comment="// body", label="TOP")]
+labelled_art = fbd_render.render_pou(labelled_pou)
+check_equal(
+    "merge: a labelled network renders one header",
+    len([line for line in labelled_art if line.startswith("(* Network")]),
+    1,
+)
+check("merge: the label is still drawn", any("(* label: TOP *)" in line for line in labelled_art))
+check("merge: the labelled network's body follows", any(line == "x" for line in labelled_art))
+
+# A label alone on a network of its own - a bare jump target - is not an
+# artefact, and keeps its own number.
+own_label_pou = Pou("OWN", "program", networks=[Network("", [Label("END")])])
+own_label_pou.native_networks = [native_networks.NativeNetwork(empty=True, label="END")]
+own_art = fbd_render.render_pou(own_label_pou)
+check("merge: a label-only network keeps its header", "(* Network 1 *)" in own_art)
+check("merge: a label-only network draws its label", any("(* label: END *)" in line for line in own_art))
+check(
+    "merge: a label-only network is not called empty",
+    not any(native_networks.NOTE_EMPTY in line for line in own_art),
+)
+
+# CODESYS writes no comment element for a network without a comment, so the
+# preceding network's comment attaches to the next component the parser sees.
+# Aligned entries must take the native comment - even an empty one - or a
+# comment-only network's text reappears on the network after it.
+bled_pou = Pou(
+    "BLED",
+    "program",
+    networks=[Network("// stray comment from the network before", [Signal("x")])],
+)
+bled_pou.native_networks = [
+    native_networks.NativeNetwork(empty=True, comment="// stray comment from the network before"),
+    native_networks.NativeNetwork(),
+]
+bled_art = fbd_render.render_pou(bled_pou)
+check("merge: the comment-only network keeps its comment", "(* Network 1: stray comment from the network before *)" in bled_art)
+check("merge: the comment does not bleed onto the next network", "(* Network 2 *)" in bled_art)
+
+# A native list that does not line up must not renumber by guesswork.
+lying_pou = Pou("LYING", "program", networks=[Network("", [Signal("x")])])
+lying_pou.native_networks = [native_networks.NativeNetwork(), native_networks.NativeNetwork()]
+lying_art = fbd_render.render_pou(lying_pou)
+check("merge: a misaligned list falls back", "(* Network 1 *)" in lying_art)
+check("merge: the fallback warns in the output", any("could not align" in line for line in lying_art))
+check("merge: the failure is flagged", getattr(lying_pou, "native_merge_failed", False) is True)
+
+
 # --- language dispatch -----------------------------------------------------
 
 check_equal("LD parser ignores FBD bodies", parse_ld.parse_pous(FBD_SOURCE), [])

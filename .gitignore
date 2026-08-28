@@ -1,5 +1,8 @@
 .vscode/
 
+# CODESYS per-user session files written next to the .project while it is open
+*.~u
+
 # Claude Code's per-developer tool permissions. Machine-specific paths, and
 # permission grants that should not be inherited by whoever clones the repo.
 .claude/

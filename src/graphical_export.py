@@ -21,6 +21,7 @@ import time
 
 import fbd_render
 import ld_render
+import native_networks
 import parse_fbd
 import parse_ld
 import plcopen
@@ -41,6 +42,8 @@ EMPTY_STATS = {
     "draw_seconds": 0.0,
     "verbatim_declarations": 0,
     "fallback_declarations": 0,
+    "members_missing": 0,
+    "alignment_failures": 0,
 }
 
 STATS = dict(EMPTY_STATS)
@@ -76,6 +79,16 @@ def summary():
             "fallback_declarations"
         ]
         line += " pragmas and attributes may be missing from those declarations."
+    if STATS["members_missing"]:
+        line += "\n         NOTE: %d action/transition/method export(s) did not carry the member's own body;" % STATS[
+            "members_missing"
+        ]
+        line += " no .txt was written for those - review their native xml."
+    if STATS["alignment_failures"]:
+        line += "\n         NOTE: %d POU(s) could not be aligned with their native export;" % STATS[
+            "alignment_failures"
+        ]
+        line += " their network numbering may not match the CODESYS editor."
     return line
 
 
@@ -87,24 +100,42 @@ RENDERERS = {
 }
 
 
-def _render_pous(plcopen_path):
+def _render_pous(plcopen_path, member_name=None):
     """(pou, art_renderer) for every POU in the file we know how to draw.
 
     One pass over the document. Asking each language parser in turn would
     re-read and re-parse the whole file once per language, which is pure waste
     on a project with hundreds of POUs.
+
+    With a member_name, only that member's own body qualifies. The exported
+    file also carries the parent POU's body, and rendering that instead is
+    exactly the foreign-dump defect this parameter exists to prevent.
     """
     found = []
-    for pou_elem, language, body in plcopen.iter_bodies(plcopen_path):
+    if member_name is None:
+        bodies = plcopen.iter_bodies(plcopen_path)
+    else:
+        bodies = plcopen.iter_member_bodies(plcopen_path, member_name)
+    for pou_elem, language, body in bodies:
         entry = RENDERERS.get(language)
         if entry is None:
             continue
         parser, art_renderer = entry
-        found.append((parser.pou_from_body(pou_elem, body), art_renderer))
+        pou = parser.pou_from_body(pou_elem, body)
+        if member_name is not None:
+            lowered = pou.name.lower()
+            if lowered != member_name.lower() and not lowered.endswith("." + member_name.lower()):
+                # The body came from a member nested in the parent pou, whose
+                # name the parser picked up. Title the rendering for what it
+                # actually shows - and flag it, because the declaration in
+                # the export is the parent's and the rendering should say so.
+                pou.name = pou.name + "." + member_name
+                pou.member_of_parent = True
+        found.append((pou, art_renderer))
     return found
 
 
-def render_plcopen(plcopen_path, declaration_text=None):
+def render_plcopen(plcopen_path, declaration_text=None, member_name=None, native=None):
     """Render every renderable POU in a PLCopen file. [] if there are none.
 
     The declaration and the diagram only. An equivalent-ST rendering was
@@ -112,11 +143,19 @@ def render_plcopen(plcopen_path, declaration_text=None):
     two notations made the files harder to read rather than easier. The ST
     emitter is still there and reachable from tools/ladder/render.py for
     anyone who wants it; it is just not what the export writes.
+
+    ``native`` is the network list from the object's native export, when one
+    could be read. It only applies when the file renders exactly one POU -
+    which a per-object export always does - because the list describes one
+    object and guessing which of several it belongs to would misnumber them
+    all.
     """
     started = time.time()
-    pous = _render_pous(plcopen_path)
+    pous = _render_pous(plcopen_path, member_name)
     if declaration_text is not None and pous:
         pous[0][0].declaration_text = declaration_text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
+    if native and len(pous) == 1:
+        pous[0][0].native_networks = native
     STATS["parse_seconds"] += time.time() - started
 
     started = time.time()
@@ -126,7 +165,19 @@ def render_plcopen(plcopen_path, declaration_text=None):
             STATS["verbatim_declarations"] += 1
         else:
             STATS["fallback_declarations"] += 1
+        if getattr(pou, "member_of_parent", False):
+            # Otherwise the file opens with "PROGRAM <parent>" and nothing
+            # says these networks are the member's, not the parent's.
+            lines.append(u"(* " + pou.name + u" - the declaration below is the parent POU's *)")
+            lines.append(u"")
         lines.extend(art_renderer.render_pou(pou))
+        if getattr(pou, "native_merge_failed", False):
+            STATS["alignment_failures"] += 1
+            print(
+                "WARNING: could not align "
+                + pou.name
+                + " with its native export; its .txt network numbering may not match the CODESYS editor"
+            )
         lines.append(u"")
 
     while lines and lines[-1] == u"":
@@ -180,11 +231,23 @@ def _remove_quietly(path):
         pass
 
 
-def write_rendered_text(obj, base_path):
+def write_rendered_text(obj, base_path, member_name=None):
     """Export obj as PLCopen xml, render it, and write <base_path>.txt.
 
     Returns True if a file was written. SFC and CFC bodies parse to nothing
     renderable, so they are skipped rather than producing an empty file.
+
+    ``member_name`` marks obj as a sub-POU member (action, transition,
+    graphical method) whose PLCopen export wraps it in its *parent* POU.
+    Only the member's own body is rendered then - never the parent's, whose
+    networks under the member's filename would review a different POU. If
+    the export carries no such body, no file is written at all: an absent
+    rendering sends the reviewer to the native xml, a foreign one does not.
+
+    The native export written just before this (base_path + ".xml") is read
+    back for its network list, so the rendering can keep the editor's
+    network numbers and mark out-commented networks instead of silently
+    dropping them and renumbering the rest.
 
     A rendering failure must not fail the export: the native xml has already
     been written and is complete and correct on its own. The problem is
@@ -207,10 +270,22 @@ def write_rendered_text(obj, base_path):
         _export_plcopen(obj, temp_path)
         STATS["export_xml_seconds"] += time.time() - started
 
+        # The numbering authority, when it can be read. Best-effort by
+        # design: a native file that is missing, huge or oddly shaped must
+        # cost the merge, never the rendering.
+        native = native_networks.read_networks(base_path + ".xml")
+
         # render_plcopen accounts for its own parse and draw time.
         textual_declaration = getattr(getattr(obj, "textual_declaration", None), "text", None)
-        lines = render_plcopen(temp_path, textual_declaration)
+        lines = render_plcopen(temp_path, textual_declaration, member_name, native)
         if not lines:
+            if member_name is not None:
+                STATS["members_missing"] += 1
+                print(
+                    "WARNING: the PLCopen export of "
+                    + obj.get_name()
+                    + " carries no renderable body for the member itself; no .txt written - review the native xml"
+                )
             STATS["skipped"] += 1
             return False
 

@@ -277,6 +277,121 @@ finally:
     shutil.rmtree(workspace)
 
 
+# --- sub-POU members render their own body, never the parent's --------------
+
+# An action's PLCopen export wraps it in its parent POU, parent body included.
+# Without the member name the rendering drew the parent's networks under the
+# action's filename - a dump describing a different POU than the .xml beside
+# it, which a reviewer has no way to notice.
+ACTION_FIXTURE = os.path.join(HERE, "fixtures", "action_member.plcopen.xml")
+
+workspace = tempfile.mkdtemp()
+try:
+    graphical_export.reset_stats()
+
+    action_base = os.path.join(workspace, "PLC_TEST.ACT_TEST")
+    action = FakePou("ACT_TEST", ACTION_FIXTURE)
+    check(
+        "an action renders",
+        graphical_export.write_rendered_text(action, action_base, member_name="ACT_TEST") is True,
+    )
+    action_content = read(action_base + ".txt")
+    check("the action's own body is drawn", "Status.Action" in action_content)
+    check("the parent's body is not drawn", "Status.Parent" not in action_content)
+    check("the rendering is titled for the member", "PLC_TEST.ACT_TEST" in action_content)
+    check(
+        "the rendering says whose declaration it shows",
+        "the declaration below is the parent POU's" in action_content,
+    )
+
+    # The parent's own rendering must still be the parent body, actions
+    # excluded - iter_bodies only ever took the pou's direct <body>.
+    parent_base = os.path.join(workspace, "PLC_TEST")
+    parent = FakePou("PLC_TEST", ACTION_FIXTURE)
+    check("the parent still renders", graphical_export.write_rendered_text(parent, parent_base) is True)
+    parent_content = read(parent_base + ".txt")
+    check("the parent draws its own body", "Status.Parent" in parent_content)
+    check("the parent does not absorb the action", "Status.Action" not in parent_content)
+    check(
+        "the parent's dump carries no member note",
+        "the declaration below is the parent POU's" not in parent_content,
+    )
+
+    # A member whose body the export does not carry must produce NO file: an
+    # absent rendering sends the reviewer to the native xml, a foreign one
+    # does not.
+    missing_base = os.path.join(workspace, "PLC_TEST.ACT_MISSING")
+    missing = FakePou("ACT_MISSING", os.path.join(FIXTURES, "LDTesting.xml"))
+    check(
+        "a member the export lacks writes nothing",
+        graphical_export.write_rendered_text(missing, missing_base, member_name="ACT_MISSING") is False,
+    )
+    check("no foreign dump is written", not os.path.exists(missing_base + ".txt"))
+    check_equal("the missing member is counted", graphical_export.STATS["members_missing"], 1)
+    check("the summary reports the missing member", "no .txt was written" in graphical_export.summary())
+finally:
+    shutil.rmtree(workspace)
+
+
+# --- network numbers follow the native export -------------------------------
+
+# An out-commented network is absent from the PLCopen export, so numbering the
+# rendered networks 1..n renumbered everything after it away from the native
+# .xml - the file reviewers actually hold next to the .txt. The native export
+# written just before the rendering carries the full list, and is the
+# authority.
+NATIVE_FIXTURE = os.path.join(HERE, "fixtures", "native_networks.xml")
+
+workspace = tempfile.mkdtemp()
+try:
+    graphical_export.reset_stats()
+
+    merged_base = os.path.join(workspace, "MERGED")
+    shutil.copyfile(NATIVE_FIXTURE, merged_base + ".xml")
+    merged = FakePou("MERGED", os.path.join(FIXTURES, "LDTesting.xml"))
+    check("a pou with a native list renders", graphical_export.write_rendered_text(merged, merged_base) is True)
+    merged_content = read(merged_base + ".txt")
+    check("native comments reach the headers", "(* Network 1: first rung *)" in merged_content)
+    check("the out-commented network keeps its number", "(* Network 2: disabled logic *)" in merged_content)
+    check(
+        "the out-commented network is marked",
+        "out-commented in CODESYS" in merged_content,
+    )
+    check("later networks keep the editor's numbers", "(* Network 3 *)" in merged_content)
+    check_equal("nothing is misaligned", graphical_export.STATS["alignment_failures"], 0)
+
+    # A native list that cannot be lined up must not renumber by guesswork:
+    # the sequential numbering stays, and the doubt is written into the file.
+    lying_base = os.path.join(workspace, "LYING")
+    handle = io.open(lying_base + ".xml", "w", encoding="utf-8")
+    handle.write(
+        read(NATIVE_FIXTURE).replace(
+            '<Single Name="OutCommented" Type="bool">True</Single>',
+            '<Single Name="OutCommented" Type="bool">False</Single>',
+        )
+    )
+    handle.close()
+    lying = FakePou("LYING", os.path.join(FIXTURES, "LDTesting.xml"))
+    check("a misaligned pou still renders", graphical_export.write_rendered_text(lying, lying_base) is True)
+    lying_content = read(lying_base + ".txt")
+    check("the misalignment is written into the file", "could not align" in lying_content)
+    check("numbering falls back to sequential", "(* Network 1 *)" in lying_content)
+    check_equal("the misalignment is counted", graphical_export.STATS["alignment_failures"], 1)
+    check("the summary reports the misalignment", "may not match the CODESYS editor" in graphical_export.summary())
+
+    # No native xml at all - the CLI path - must render exactly as before.
+    plain_base = os.path.join(workspace, "PLAIN")
+    plain = FakePou("PLAIN", os.path.join(FIXTURES, "LDTesting.xml"))
+    check("no native xml still renders", graphical_export.write_rendered_text(plain, plain_base) is True)
+    plain_content = read(plain_base + ".txt")
+    check("sequential numbering without a native list", "(* Network 1 *)" in plain_content)
+    check("no warning without a native list", "could not align" not in plain_content)
+
+    graphical_export.reset_stats()
+finally:
+    shutil.rmtree(workspace)
+
+
 # --- the importer ignores the derived file ---------------------------------
 
 # This is the contract that keeps the round trip intact. import_directory_child

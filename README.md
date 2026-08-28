@@ -81,7 +81,9 @@ This file is **derived and read-only**. The native xml remains the only thing `I
 
 SFC and CFC POUs are not yet rendered; they export as native xml alone.
 
-Networks are numbered as CODESYS numbers them, so a network in the file lines up with the one in the editor.
+Networks are numbered as CODESYS numbers them, so a network in the file lines up with the one in the editor. The numbering comes from the native xml's network list, which is what makes it hold for the networks the PLCopen export leaves out: an out-commented network keeps its number and appears as a placeholder marked `out-commented in CODESYS - does not execute`, and an empty network keeps its number as `(* empty network *)`. If the list cannot be lined up with what was rendered, the file keeps sequential numbering and carries a warning line saying so.
+
+A graphical Action, Transition or Method renders its own body under its own filename (`MyPou.MyAction.txt`). If the CODESYS build exports no body for the member, no `.txt` is written - reviewing then falls back to the native xml - rather than writing a rendering of the parent POU under the member's name.
 
 To render an exported PLCopen file by hand, to get plain ASCII instead of box drawing, or to see the equivalent Structured Text (which the export does not write, since showing each network twice in two notations reads worse than showing it once):
 

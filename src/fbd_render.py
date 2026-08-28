@@ -11,8 +11,21 @@ from __future__ import unicode_literals
 
 import charset
 from layout import Block, stack
-from ld_render import render_declaration
+from ld_render import ALIGNMENT_WARNING, network_header, render_declaration
 from model import Assign, Call, Jump, Label, Signal
+import native_networks
+
+
+def _is_label_network(network):
+    """True for a network holding nothing but jump labels.
+
+    CODESYS stores a network's label on the network itself, but PLCopen
+    exports it as a free-standing element wired to nothing, so grouping by
+    wiring gives it a component - and therefore a network - of its own. The
+    native network list knows which real network each label belongs to; this
+    predicate is how the alignment recognises the artefact.
+    """
+    return bool(network.outputs) and all(isinstance(tree, Label) for tree in network.outputs)
 
 
 def _render_signal(node):
@@ -263,20 +276,35 @@ def render_network(network):
 
 
 def render_pou(pou):
-    """Render a whole FBD POU: declaration, then one box tree per network."""
+    """Render a whole FBD POU: declaration, then one box tree per network.
+
+    Numbering follows the native export's network list when one is attached
+    to the pou: out-commented and empty networks keep their number and get a
+    placeholder, because dropping them renumbers everything after them away
+    from what the reviewer sees in CODESYS.
+    """
     lines = render_declaration(pou)
     lines.append("")
 
-    if not pou.networks:
+    entries = native_networks.entries_for(pou, pou.networks, _is_label_network)
+    if getattr(pou, "native_merge_failed", False):
+        lines.append(ALIGNMENT_WARNING)
+        lines.append("")
+
+    if not entries:
         lines.append("(* no networks *)")
 
-    for index, network in enumerate(pou.networks):
-        header = "(* Network " + str(index + 1)
-        if network.comment:
-            comment = network.comment.replace("\r", " ").replace("\n", " ").replace("*)", "* )")
-            header += ": " + comment.lstrip("/").strip()
-        lines.append(header + " *)")
-        lines.extend(render_network(network))
+    # In the native-aligned case the native comment is the authority: a
+    # parsed comment can belong to the wrong network, because CODESYS writes
+    # no comment element for a network without one and the preceding
+    # network's comment then attaches to the next component it sees. In the
+    # sequential case the parsed comment is all there is.
+    for number, comment, note, networks in entries:
+        lines.append(network_header(number, comment))
+        if note is not None:
+            lines.append("(* " + note + " *)")
+        for network in networks:
+            lines.extend(render_network(network))
         lines.append("")
 
     while lines and lines[-1] == "":

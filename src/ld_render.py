@@ -17,13 +17,48 @@ from __future__ import unicode_literals
 
 import charset
 from layout import Block
-from model import BLOCK, COIL, CONTACT, Element, Empty, Parallel, Series
+from model import BLOCK, COIL, CONTACT, LABEL, Element, Empty, Parallel, Series
+import native_networks
+
+
+def _is_label_rung(rung):
+    """True for a rung that is nothing but a jump label.
+
+    CODESYS stores a network's label on the network itself, but PLCopen
+    exports it as a free-standing element wired to nothing, so it surfaces
+    as a rung of its own. The native network list knows which real network
+    each label belongs to; this predicate is how the alignment recognises
+    the artefact.
+    """
+    return isinstance(rung, Element) and rung.kind == LABEL
 
 POU_TYPE_KEYWORDS = {
     "program": "PROGRAM",
     "functionBlock": "FUNCTION_BLOCK",
     "function": "FUNCTION",
 }
+
+# Emitted into the .txt itself when the native network list exists but cannot
+# be lined up with what was rendered. Numbering silently adrift from the
+# editor is how off-by-one findings happen; a reviewer must be able to see
+# the doubt in the file they are reading.
+ALIGNMENT_WARNING = (
+    "(* WARNING: could not align these diagrams with the native export;"
+    " network numbering may not match the CODESYS editor *)"
+)
+
+
+def network_header(number, comment):
+    """The "(* Network n: comment *)" line above each network or rung.
+
+    A comment can span lines and can contain "*)", either of which would
+    terminate the generated block comment early, so both are defused.
+    """
+    header = "(* Network " + str(number)
+    if comment:
+        comment = comment.replace("\r", " ").replace("\n", " ").replace("*)", "* )")
+        header += ": " + comment.lstrip("/").strip()
+    return header + " *)"
 
 
 def _symbol_and_label(element):
@@ -272,16 +307,30 @@ def render_declaration(pou):
 
 
 def render_pou(pou):
-    """Render a whole POU: declaration, then one block per rung."""
+    """Render a whole POU: declaration, then one block per rung.
+
+    Numbering follows the native export's network list when one is attached
+    to the pou: out-commented and empty networks keep their number and get a
+    placeholder, because dropping them renumbers everything after them away
+    from what the reviewer sees in CODESYS.
+    """
     lines = render_declaration(pou)
     lines.append("")
 
-    if not pou.rungs:
+    entries = native_networks.entries_for(pou, pou.rungs, _is_label_rung)
+    if getattr(pou, "native_merge_failed", False):
+        lines.append(ALIGNMENT_WARNING)
+        lines.append("")
+
+    if not entries:
         lines.append("(* no rungs *)")
 
-    for index, rung in enumerate(pou.rungs):
-        lines.append("(* Network " + str(index + 1) + " *)")
-        lines.extend(render_rung(rung))
+    for number, comment, note, rungs in entries:
+        lines.append(network_header(number, comment))
+        if note is not None:
+            lines.append("(* " + note + " *)")
+        for rung in rungs:
+            lines.extend(render_rung(rung))
         lines.append("")
 
     while lines and lines[-1] == "":

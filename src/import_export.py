@@ -205,7 +205,10 @@ def export_method(child_obj, parent_obj, parent_folder_path, export_child_fn):
     else:
         base = os.path.join(parent_folder_path, parent_obj.get_name() + "." + child_obj.get_name())
         write_native(child_obj, base + ".xml", recursive=False)
-        write_rendered_text(child_obj, base)
+        # member_name: the PLCopen export of a sub-POU wraps it in its parent,
+        # parent body included. Without the name, the rendering draws the
+        # parent's networks under this member's filename.
+        write_rendered_text(child_obj, base, member_name=child_obj.get_name())
 
 
 def import_method_st(child, dir_path, dir_parent_obj, import_dir_fn):
@@ -233,7 +236,10 @@ def _export_member_st_or_xml(child_obj, parent_obj, parent_folder_path, st_suffi
             f.write(child_obj.textual_implementation.text)
     else:
         write_native(child_obj, base + ".xml", recursive=False)
-        write_rendered_text(child_obj, base)
+        # member_name: see export_method. An action's export carries the whole
+        # parent POU - rendering without the name is how the HMI PLC_PRG.ACT_*
+        # dumps came to describe the parent instead of the action.
+        write_rendered_text(child_obj, base, member_name=child_obj.get_name())
 
 
 def export_action(child_obj, parent_obj, parent_folder_path, export_child_fn):
