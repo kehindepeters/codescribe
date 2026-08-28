@@ -18,6 +18,11 @@ class ExportFolderLockedError(EnvironmentError):
     preserved in the staging folder."""
 
 
+class NothingExportedError(EnvironmentError):
+    """The export produced no files at all, so the existing export folder was
+    left untouched rather than being replaced with an empty one."""
+
+
 def begin_export_folder(target_folder):
     # The export is written into a sibling staging folder and only swapped into
     # place once it completes, so a locked target folder or a mid-export crash
@@ -42,7 +47,28 @@ def _sync_export_files(staging_folder, target_folder):
             shutil.copy2(os.path.join(dir_path, file_name), os.path.join(destination, file_name))
 
 
+def _folder_has_files(folder):
+    for _dir_path, _dir_names, file_names in os.walk(folder):
+        if file_names:
+            return True
+    return False
+
+
 def finalize_export_folder(target_folder, staging_folder):
+    # An export that wrote no files must never replace the previous export:
+    # swapping in an empty staging folder silently destroys it. Seen when
+    # Export Lib To Files runs on a device project - its walker only exports
+    # objects directly under the project root, and a device project keeps
+    # everything under Devices, so the walk produces nothing.
+    if not _folder_has_files(staging_folder):
+        shutil.rmtree(staging_folder)
+        raise NothingExportedError(
+            "Nothing was exported, so the existing export folder was left untouched: "
+            + target_folder
+            + ". Export To Files needs a device project (objects under a Device); Export Lib To Files"
+            + " needs a library project (objects directly under the project root)."
+        )
+
     backup_folder = target_folder + EXPORT_BACKUP_SUFFIX
     try:
         if os.path.exists(target_folder):

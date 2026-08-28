@@ -533,6 +533,43 @@ finally:
     shutil.rmtree(workspace)
 
 
+# --- an empty export must never destroy the previous one ---------------------
+
+# Export Lib To Files on a device project walks nothing (its objects all live
+# under Devices), and the empty staging folder then swapped in over the real
+# export, wiping it. The swap now refuses an empty staging outright.
+import util  # noqa: E402
+
+workspace = tempfile.mkdtemp()
+try:
+    target = os.path.join(workspace, "Project")
+    os.mkdir(target)
+    handle = io.open(os.path.join(target, "KEEP.st"), "w", encoding="utf-8")
+    handle.write(u"PROGRAM Keep\n")
+    handle.close()
+
+    staging = util.begin_export_folder(target)
+    try:
+        util.finalize_export_folder(target, staging)
+        check("an empty export is refused", False, "finalize accepted an empty staging folder")
+    except util.NothingExportedError as error:
+        check("an empty export is refused", True)
+        check("the refusal names the preserved folder", target in str(error))
+    check("the previous export survives", os.path.exists(os.path.join(target, "KEEP.st")))
+    check("the empty staging folder is cleaned up", not os.path.exists(staging))
+
+    # A real export must still swap in exactly as before.
+    staging = util.begin_export_folder(target)
+    handle = io.open(os.path.join(staging, "NEW.st"), "w", encoding="utf-8")
+    handle.write(u"PROGRAM New\n")
+    handle.close()
+    util.finalize_export_folder(target, staging)
+    check("a real export still swaps in", os.path.exists(os.path.join(target, "NEW.st")))
+    check("the swap still replaces the old copy", not os.path.exists(os.path.join(target, "KEEP.st")))
+finally:
+    shutil.rmtree(workspace)
+
+
 # --- the importer ignores the derived file ---------------------------------
 
 # This is the contract that keeps the round trip intact. import_directory_child

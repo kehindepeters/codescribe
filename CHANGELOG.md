@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- An export that produces no files no longer replaces the previous export folder with an empty one; it fails with an explanation and leaves the folder untouched. `Export Lib To Files` on a device project was the trigger: its walker only exports objects directly under the project root, so on a device project it exported nothing and wiped the existing export. That script now also refuses a project with devices up front and points to `Export To Files`.
+
 - The Library Manager exports its reference list as a read-only `<name>.libraries.txt` (name, version, vendor per line). Library behaviour itself is not exportable, but any bench check of a library needs to know exactly which version the project resolves.
 - The Visualization Manager exports natively as a read-only `<name>.service.txt`, recursively, so the global hotkey (key configuration) mapping and target/web visualization settings become reviewable. It is still never imported - importing it raises interactive overwrite dialogs, which is why earlier versions dropped it from the export entirely - and the project template continues to carry the real object.
 

@@ -72,6 +72,18 @@ try:
     src_folder = get_src_folder(scriptengine.projects.primary)
     print("Writing to: " + src_folder)
 
+    # A device project keeps its objects under Devices, which this walker never
+    # enters - the "export" would be empty. Refuse up front with a pointer to
+    # the right button instead of touching anything on disk.
+    for child_obj in scriptengine.projects.primary.get_children():
+        if get_object_type(child_obj) == ObjectType.DEVICE:
+            raise ValueError(
+                "This project has a device ('"
+                + child_obj.get_name()
+                + "'), so it is not a library project. Use Export To Files instead;"
+                + " Export Lib To Files only exports objects directly under the project root."
+            )
+
     staging_folder = begin_export_folder(src_folder)
 
     for child_obj in scriptengine.projects.primary.get_children():
