@@ -151,6 +151,9 @@ try:
     check_equal("each render is counted", graphical_export.STATS["rendered"], 2)
     check_equal("the skipped sfc is counted", graphical_export.STATS["skipped"], 1)
     check("the summary names both costs", "CODESYS export_xml" in graphical_export.summary())
+    # A bare "skipped 1" reads like something went missing; the summary must
+    # say which POU and why.
+    check("the summary names the skipped pou", "SFC/CFC: SFC_TEST" in graphical_export.summary())
 
     graphical_export.reset_stats()
     check_equal("reset clears the counts", graphical_export.STATS["rendered"], 0)
