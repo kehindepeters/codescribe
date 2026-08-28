@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The Library Manager exports its reference list as a read-only `<name>.libraries.txt` (name, version, vendor per line). Library behaviour itself is not exportable, but any bench check of a library needs to know exactly which version the project resolves.
+- The Visualization Manager exports natively as a read-only `<name>.service.txt`, recursively, so the global hotkey (key configuration) mapping and target/web visualization settings become reviewable. It is still never imported - importing it raises interactive overwrite dialogs, which is why earlier versions dropped it from the export entirely - and the project template continues to carry the real object.
+
 - Graphical action, transition and method renderings draw the member's own body. The PLCopen export of a sub-POU wraps it in its parent POU, parent body included, and earlier versions rendered that parent body - so `PLC_PRG.ACT_x.txt` carried a copy of the parent `PLC_PRG` dump and the action's own logic appeared in no `.txt` at all. If a ScriptEngine build exports no body for the member, no `.txt` is written and the summary says so, rather than writing a rendering of the wrong POU.
 - `.txt` network numbering follows the native export's network list. Out-commented networks are absent from the PLCopen export, so earlier versions silently dropped them and renumbered everything after them away from the numbers in the CODESYS editor and the native `.xml`. Now every network keeps its editor number: out-commented networks appear as a placeholder marked `out-commented in CODESYS - does not execute`, empty networks as `empty network`, and a network's jump label no longer splits it into two numbered headers. Ladder network headers gain the network comment on the way. If the native list cannot be lined up with what was rendered, the `.txt` keeps sequential numbering and says so in a warning line, and the export summary counts the misalignment.
 

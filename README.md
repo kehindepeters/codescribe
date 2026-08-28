@@ -61,6 +61,11 @@ Items are exported in formatted structured text (`.st`) where possible, and in n
 
 Actions and Transitions export as `.st` with the kind encoded in the filename (`MyPou.MyAction.action.st`, `MyPou.MyTransition.transition.st`). The file contains the implementation text only, as these objects have no textual declaration.
 
+Two service objects export **read-only** — written on every export, never imported (the project template carries the real objects):
+
+- The Library Manager exports its reference list as `<name>.libraries.txt` (one line per library: name, version, vendor), so a review or bench check knows exactly which library versions the project resolves.
+- The Visualization Manager exports natively as `<name>.service.txt` (recursively, so the global hotkey/key configuration and target/web visualization settings are included). Importing this object raises interactive overwrite dialogs, which is why it is not round-tripped.
+
 ### Reading graphical POUs
 
 Ladder and Function Block Diagram POUs have no textual implementation, so they export as native xml that git can store but nobody can review. Alongside that xml, CODESCRIBE writes a `.txt` holding the declaration and a diagram of each network:

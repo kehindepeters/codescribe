@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 sys.path.insert(0, os.path.join(REPO, "tools", "ci"))  # stubbed scriptengine
 
 import graphical_export  # noqa: E402
+import import_export  # noqa: E402
 import import_from_files  # noqa: E402
 
 FIXTURES = os.path.join(HERE, "fixtures", "codesys")
@@ -392,6 +393,141 @@ finally:
     shutil.rmtree(workspace)
 
 
+# --- read-only service exports: library list and visualisation manager ------
+
+# Library behaviour is not exportable, but which exact versions the project
+# resolves is - and a bench check of a library is only meaningful against the
+# version it characterises. The visualisation manager carries the global
+# hotkey mapping nothing else exports; importing it raises interactive
+# overwrite dialogs, so it exports read-only under a suffix the importer
+# ignores by construction.
+
+
+class FakeReference(object):
+    def __init__(self, display_name=None, name=None, version=None, company=None):
+        if display_name is not None:
+            self.display_name = display_name
+        if name is not None:
+            self.name = name
+        if version is not None:
+            self.version = version
+        if company is not None:
+            self.company = company
+
+    def __str__(self):
+        return "raw reference"
+
+
+class FakeLibManager(object):
+    def __init__(self, name, references=None, names=None):
+        self._name = name
+        if references is not None:
+            self.references = references
+        self._names = names
+
+    def get_name(self):
+        return self._name
+
+    def get_libraries(self):
+        if self._names is None:
+            raise RuntimeError("no such API on this build")
+        return self._names
+
+
+class FakeVisuManager(object):
+    def __init__(self, name):
+        self._name = name
+        self.calls = []
+
+    def get_name(self):
+        return self._name
+
+    def export_native(self, path, recursive=False):
+        self.calls.append((path, recursive))
+        handle = io.open(path, "w", encoding="utf-8")
+        handle.write(u"<ExportFile />\n")
+        handle.close()
+
+
+workspace = tempfile.mkdtemp()
+try:
+    manager = FakeLibManager(
+        "Library Manager",
+        references=[
+            # A display name that already carries version and company must not
+            # have them appended again.
+            FakeReference(
+                display_name="ifmIOcommon, 1.5.0.0 (ifm electronic gmbh)",
+                version="1.5.0.0",
+                company="ifm electronic gmbh",
+            ),
+            FakeReference(name="Standard", version="3.5.11.0", company="3S"),
+            FakeReference(),  # nothing probeable - falls back to str()
+        ],
+    )
+    import_export.export_library_manager(manager, None, workspace, None)
+    lib_list_path = os.path.join(workspace, "Library Manager.libraries.txt")
+    check("the library list is written", os.path.exists(lib_list_path))
+    lib_list = read(lib_list_path)
+    check("the list says it is read-only", "read-only" in lib_list)
+    check("a display name is taken verbatim", "ifmIOcommon, 1.5.0.0 (ifm electronic gmbh)\n" in lib_list)
+    check("embedded details are not duplicated", lib_list.count("1.5.0.0") == 1)
+    check("probed details are assembled", "Standard, 3.5.11.0 (3S)" in lib_list)
+    check("an opaque reference still lands as a line", "raw reference" in lib_list)
+
+    # An older build without .references still exports via get_libraries.
+    named_only = FakeLibManager("Library Manager", names=["OldLib, 1.0.0.0 (Vendor)"])
+    named_dir = tempfile.mkdtemp()
+    try:
+        import_export.export_library_manager(named_only, None, named_dir, None)
+        named_list = read(os.path.join(named_dir, "Library Manager.libraries.txt"))
+        check("get_libraries is the fallback", "OldLib, 1.0.0.0 (Vendor)" in named_list)
+    finally:
+        shutil.rmtree(named_dir)
+
+    # A manager exposing neither API must warn, not raise, and write nothing.
+    broken_dir = tempfile.mkdtemp()
+    try:
+        broken = FakeLibManager("Library Manager")
+        try:
+            import_export.export_library_manager(broken, None, broken_dir, None)
+            check("a hostile lib manager is reported, not raised", True)
+        except Exception as error:
+            check("a hostile lib manager is reported, not raised", False, repr(error))
+        check("no library list is written for it", os.listdir(broken_dir) == [])
+    finally:
+        shutil.rmtree(broken_dir)
+
+    visu = FakeVisuManager("Visualization Manager")
+    import_export.export_visualisation_manager(visu, None, workspace, None)
+    service_path = os.path.join(workspace, "Visualization Manager.service.txt")
+    check("the visualisation manager is exported", os.path.exists(service_path))
+    # The key configuration and target/web visualisations live under the
+    # manager, so a flat export would miss the hotkey mapping entirely.
+    check_equal("the manager export is recursive", visu.calls[0][1], True)
+
+    # The safety property behind the separate SERVICE table: import must never
+    # remove these objects, because nothing would recreate them.
+    class FakeTrackedObject(object):
+        def __init__(self, type_guid):
+            self.type = type_guid
+            self.removed = False
+
+        def get_name(self):
+            return "service object"
+
+        def remove(self):
+            self.removed = True
+
+    lib_manager_obj = FakeTrackedObject("adb5cb65-8e1d-4a00-b70a-375ea27582f3")
+    visu_manager_obj = FakeTrackedObject("4d3fdb8f-ab50-4c35-9d3a-d4bb9bb9a628")
+    import_export.remove_tracked_objects([lib_manager_obj, visu_manager_obj])
+    check("import does not remove the library manager", not lib_manager_obj.removed)
+    check("import does not remove the visualisation manager", not visu_manager_obj.removed)
+finally:
+    shutil.rmtree(workspace)
+
+
 # --- the importer ignores the derived file ---------------------------------
 
 # This is the contract that keeps the round trip intact. import_directory_child
@@ -400,7 +536,13 @@ finally:
 # derived files.
 workspace = tempfile.mkdtemp()
 try:
-    for name in ("Main.txt", "Main.Method.txt", "Main.gvl.txt"):
+    for name in (
+        "Main.txt",
+        "Main.Method.txt",
+        "Main.gvl.txt",
+        "Library Manager.libraries.txt",
+        "Visualization Manager.service.txt",
+    ):
         handle = io.open(os.path.join(workspace, name), "w", encoding="utf-8")
         handle.write("PROGRAM Main\n")
         handle.close()

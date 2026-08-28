@@ -7,7 +7,7 @@ import scriptengine  # type: ignore
 
 import graphical_export
 from entrypoint import get_src_folder
-from import_export import OBJECT_TYPE_TO_EXPORT_FUNCTION, write_native
+from import_export import OBJECT_TYPE_TO_EXPORT_FUNCTION, SERVICE_EXPORT_FUNCTIONS, write_native
 from object_type import ObjectType, get_object_type
 from util import *
 
@@ -34,6 +34,15 @@ def export_child(child_obj, parent_obj, parent_folder_path):
     export_fn = OBJECT_TYPE_TO_EXPORT_FUNCTION.get(child_obj_type)
     if export_fn is not None:
         export_fn(child_obj, parent_obj, parent_folder_path, export_child)
+        return
+
+    # Read-only informational exports (library list, visualisation manager).
+    # In library projects these managers usually carry unmapped GUIDs and are
+    # filtered by SKIP_NAMES above instead; the branch is here for consistency
+    # with script_export_to_files.py.
+    service_fn = SERVICE_EXPORT_FUNCTIONS.get(child_obj_type)
+    if service_fn is not None:
+        service_fn(child_obj, parent_obj, parent_folder_path, export_child)
         return
 
     if child_obj_type == ObjectType.UNKNOWN:
