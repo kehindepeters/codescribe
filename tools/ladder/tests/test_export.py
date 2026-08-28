@@ -404,7 +404,7 @@ finally:
 
 
 class FakeReference(object):
-    def __init__(self, display_name=None, name=None, version=None, company=None):
+    def __init__(self, display_name=None, name=None, version=None, company=None, default_resolution=None):
         if display_name is not None:
             self.display_name = display_name
         if name is not None:
@@ -413,6 +413,8 @@ class FakeReference(object):
             self.version = version
         if company is not None:
             self.company = company
+        if default_resolution is not None:
+            self.default_resolution = default_resolution
 
     def __str__(self):
         return "raw reference"
@@ -462,6 +464,8 @@ try:
                 company="ifm electronic gmbh",
             ),
             FakeReference(name="Standard", version="3.5.11.0", company="3S"),
+            # A placeholder pins no version by itself; its resolution must show.
+            FakeReference(display_name="#Util", default_resolution="Util, 3.5.11.0 (System)"),
             FakeReference(),  # nothing probeable - falls back to str()
         ],
     )
@@ -473,6 +477,7 @@ try:
     check("a display name is taken verbatim", "ifmIOcommon, 1.5.0.0 (ifm electronic gmbh)\n" in lib_list)
     check("embedded details are not duplicated", lib_list.count("1.5.0.0") == 1)
     check("probed details are assembled", "Standard, 3.5.11.0 (3S)" in lib_list)
+    check("a placeholder shows its resolution", "#Util -> Util, 3.5.11.0 (System)" in lib_list)
     check("an opaque reference still lands as a line", "raw reference" in lib_list)
 
     # An older build without .references still exports via get_libraries.

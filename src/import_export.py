@@ -342,6 +342,12 @@ def _describe_library_reference(reference):
     company = _probe_attribute(reference, ("company",))
     if company is not None and (u"%s" % company) not in line:
         line += u" (" + (u"%s" % company) + u")"
+    # A placeholder reference displays as "#Util", which pins no version at
+    # all - and the placeholder libraries are exactly the ones a bench check
+    # is most likely to need. Show what it resolves to when the build says.
+    resolution = _probe_attribute(reference, ("effective_resolution", "default_resolution", "resolution"))
+    if resolution is not None and (u"%s" % resolution) not in line:
+        line += u" -> " + (u"%s" % resolution)
     return line
 
 
