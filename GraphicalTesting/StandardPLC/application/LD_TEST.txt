@@ -1,0 +1,32 @@
+PROGRAM LD_TEST
+VAR
+	Sensor1: BOOL;
+	Sensor2: BOOL;
+	sensor3: BOOL;
+	PowerOn: BOOL;
+	TON_0: TON;
+	CTU_0: CTU;
+	PowerOff: BOOL;
+END_VAR
+
+(* Network 1 *)
+│    Sensor1   Sensor2  PowerOn
+├──┬───┤ ├───┬───┤/├──────(S)─────┤
+│  │ sensor3 │
+│  └───┤ ├───┘
+
+(* Network 2 *)
+│
+├────>>TestJump────┤
+
+(* Network 3 *)
+│               TON_0 : TON           CTU_0 : CTU
+│   PowerOn  ┌───────────────┐  ┌──────────────────────┐  PowerOff
+├─────┤ ├────┤IN            Q├──┤CU                   Q├────(R)──────┤
+│            │PT := T#5S   ET│  │RESET := PowerOff   CV│
+│            └───────────────┘  │PV := 10              │
+│                               └──────────────────────┘
+
+(* Network 4 *)
+│
+├────TestJump:────┤

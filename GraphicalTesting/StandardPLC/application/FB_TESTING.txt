@@ -1,0 +1,49 @@
+PROGRAM FB_TESTING
+(***********************************************************************************************
+Object Name	: PLC_SUPPLY
+Descrition	: Program to control the System Supply Switch to ensure the PLC turns OFF when the ignition turns OFF.
+Author		: KP
+Date		: 17/06/25
+Rev			: P1
+***********************************************************************************************)
+VAR CONSTANT
+	uiMinVoltage 		: UINT := 5000;    // Minimum Voltage in mV
+END_VAR
+VAR
+	fbSystemSupply 	: ifmIOcommon.SystemSupply; // Function Block to monitor supply voltage on VBB15 (from ignition)
+	fbSupplySwitch 	: ifmIOcommon.SupplySwitch; // Function Block to turn ON/OFF latching switch on VBB15 supply (from ignition)
+	uiCurrSupplyVolt	: UINT ;    // Operating Voltage in mV
+	TOF_0: TOF;
+	Test: BOOL;
+	dude: BOOL;
+END_VAR
+
+(* Network 1: Function Block to monitor supply voltage on VBB15 (from ignition) *)
+                                            fbSystemSupply : ifmIOcommon.SystemSupply
+                                           ┌─────────────────────────────────────────┐
+ifmIOcommon.SYS_VOLTAGE_CHANNEL.VBB15──────┤eChannel                           xError│
+ifmIOcommon.MODE_SYSTEM_SUPPLY.SYS_SUPPLY──┤eMode                           eDiagInfo│
+                                           │eFilter                         xPrepared│
+                                           │         uiOutVoltage => uiCurrSupplyVolt│
+                                           └─────────────────────────────────────────┘
+
+(* Network 2: Safely power off PLC when ignition (VBB15) is lower than 5V for more than 10s. Enable timer on falling edge *)
+(* out-commented in CODESYS - does not execute; diagram not exported, see the native xml *)
+
+(* Network 3 *)
+(* label: ByeBye *)
+
+(* Network 4 *)
+(* empty network *)
+
+(* Network 5: Comment only network *)
+(* empty network *)
+
+(* Network 6: Comment only network with comment slash *)
+(* empty network *)
+
+(* Network 7: (* Comment only network with brackets * ) *)
+(* empty network *)
+
+(* Network 8 *)
+Test───>> ByeBye
