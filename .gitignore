@@ -15,6 +15,13 @@
 # Review correspondence. Kept beside the checkout, not in it.
 review/
 
+# The export's device and fieldbus xml. 449,000 lines of CR711S and CAN bus
+# descriptions that say nothing about the code under review, and 36 MB that
+# every clone would carry for ever. The application folders are what is
+# tracked; a full export still writes these, they are just not committed.
+GraphicalTesting/*/devices/
+GraphicalTesting/*/communication/
+
 .vscode/
 
 # Claude Code's per-developer tool permissions. Machine-specific paths, and
