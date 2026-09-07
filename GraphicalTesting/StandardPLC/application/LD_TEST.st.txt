@@ -19,7 +19,7 @@ END_VAR
 IF (Sensor1 OR sensor3) AND NOT Sensor2 THEN PowerOn := TRUE; END_IF
 
 (* Network 2 *)
-(* JMP TestJump *)
+JMP TestJump;
 
 (* Network 3: header text *)
 (* Comment *)

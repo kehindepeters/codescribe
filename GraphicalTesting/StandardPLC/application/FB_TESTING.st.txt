@@ -50,7 +50,7 @@ ByeBye:
 (* empty network *)
 
 (* Network 8 *)
-IF Test THEN (* JMP ByeBye *) END_IF
+IF Test THEN JMP ByeBye; END_IF
 
 (* Network 9: comment for the sakes of comments *)
 fbenable(EN := Test, IN := Test, PT := T#5s);

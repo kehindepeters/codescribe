@@ -107,12 +107,14 @@ def rung_to_statements(rung):
             statements.append(store_statement(item.label, condition, item.storage, item.negated))
         elif isinstance(item, Element) and item.kind in (JUMP, RETURN):
             # A jump ends the rung; its guard is the rung condition so far.
-            # Same comment form as the FBD path, so both grep alike.
-            target = (item.label or "?") if item.kind == JUMP else "RETURN"
+            # Written as CODESYS ST writes it, like the label it targets:
+            # inside (* *) it would read as a note about the program rather
+            # than as the thing that decides what runs next.
+            statement = ("JMP " + (item.label or "?") + ";") if item.kind == JUMP else "RETURN;"
             if condition:
-                statements.append("IF %s THEN (* JMP %s *) END_IF" % (condition, target))
+                statements.append("IF %s THEN %s END_IF" % (condition, statement))
             else:
-                statements.append("(* JMP %s *)" % target)
+                statements.append(statement)
         elif isinstance(item, Element) and item.kind == LABEL:
             statements.append("%s:" % (item.label or "?"))
         else:
@@ -224,10 +226,13 @@ def _fbd_value(node, statements, emitted=None):
 
     if isinstance(node, Jump):
         condition = _fbd_value(node.condition, statements, emitted)
+        # A return arrives here as a jump to "RETURN"; RETURN is a reserved
+        # word, so no label can be called that and the two cannot be confused.
+        statement = "RETURN;" if node.target == "RETURN" else ("JMP " + (node.target or "?") + ";")
         if condition:
-            statements.append("IF %s THEN (* JMP %s *) END_IF" % (condition, node.target))
+            statements.append("IF %s THEN %s END_IF" % (condition, statement))
         else:
-            statements.append("(* JMP %s *)" % node.target)
+            statements.append(statement)
         return ""
 
     if isinstance(node, Assign):

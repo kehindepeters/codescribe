@@ -208,7 +208,10 @@ check_equal("fidelity: all seven rungs survive", len(fidelity_pou.rungs), 7)
 # A jump's target lives in a "label" attribute; losing it drew ">>?" and
 # emitted no ST for the whole rung, guard included.
 check("fidelity: jump target is drawn", any(">>SKIP" in line for line in fidelity_art))
-check("fidelity: guarded jump reaches ST", any("IF xGo THEN (* JMP SKIP *) END_IF" in line for line in fidelity_st))
+# A jump decides what runs next, so it is written as CODESYS ST writes it,
+# like the label it targets - not as a note about the program.
+check("fidelity: guarded jump reaches ST", "IF xGo THEN JMP SKIP; END_IF" in fidelity_st)
+check("fidelity: no jump is dressed as a comment", not any("(* JMP" in line for line in fidelity_st))
 check("fidelity: label is drawn", any("SKIP:" in line for line in fidelity_art))
 # A jump target is program structure, not documentation: it is written the
 # way ST writes it, and not inside the delimiters this file uses for comments.
