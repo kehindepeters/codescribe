@@ -306,16 +306,22 @@ def render_declaration(pou):
 
 
 def render_pou(pou):
-    """Render a whole POU: declaration, then one block per rung."""
+    """Render a whole POU: declaration, then the rungs of each network.
+
+    A network can hold more than one rung - a block driving three outputs is
+    one network in the editor - so the number belongs to the network, not to
+    the rung.
+    """
     lines = render_declaration(pou)
     lines.append("")
 
-    if not pou.rungs:
+    if not pou.networks:
         lines.append("(* no rungs *)")
 
-    for index, rung in enumerate(pou.rungs):
+    for index, network in enumerate(pou.networks):
         lines.append("(* Network " + str(index + 1) + " *)")
-        lines.extend(render_rung(rung))
+        for rung in network.outputs:
+            lines.extend(render_rung(rung))
         lines.append("")
 
     while lines and lines[-1] == "":

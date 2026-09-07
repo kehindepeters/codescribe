@@ -39,6 +39,9 @@ OUT_VARIABLE = "outVariable"
 JUMP = "jump"
 RETURN = "return"
 LABEL = "label"
+# Carries no logic, but CODESYS writes one above each network that has a
+# comment, so it marks where one network begins.
+COMMENT = "comment"
 
 RAILS = (LEFT_RAIL, RIGHT_RAIL)
 
@@ -103,6 +106,36 @@ class Node(object):
         return "Node(%s, %s, %r, inputs=%r)" % (self.local_id, self.kind, self.label, self.inputs)
 
 
+def component_finder(nodes):
+    """Union-find over the wires, ignoring direction.
+
+    Two outputs fed from one block belong to the same network, so grouping has
+    to follow wires backwards as well as forwards. Connections to elements
+    outside ``nodes`` are ignored, which is how a caller keeps a shared
+    anchor - an LD power rail - from fusing every network into one.
+    """
+    parent = {}
+    for node in nodes:
+        parent[node.local_id] = node.local_id
+
+    def find(item):
+        root = item
+        while parent[root] != root:
+            root = parent[root]
+        while parent[item] != root:
+            parent[item], item = root, parent[item]
+        return root
+
+    for node in nodes:
+        for connection in node.inputs:
+            if connection.ref_id not in parent:
+                continue
+            left, right = find(node.local_id), find(connection.ref_id)
+            if left != right:
+                parent[left] = right
+    return find
+
+
 class Variable(object):
     """One entry from the POU interface, for rendering the declaration block."""
 
@@ -114,10 +147,16 @@ class Variable(object):
 
 
 class Pou(object):
-    """A parsed POU. ``rungs`` is populated for LD, ``networks`` for FBD."""
+    """A parsed POU. ``networks`` holds one entry per network in the editor.
+
+    Both languages fill it: for FBD each network holds the trees driving its
+    outputs, for LD the rungs of that network. A network can hold more than
+    one of either - a block driving three outputs is one network in the
+    editor, and numbering it as three throws every later number out.
+    """
 
     def __init__(
-        self, name, pou_type, variables=None, rungs=None, networks=None, language=None, declaration_text=None
+        self, name, pou_type, variables=None, networks=None, language=None, declaration_text=None
     ):
         self.name = name
         self.pou_type = pou_type
@@ -127,8 +166,12 @@ class Pou(object):
         # which case it gets rebuilt from `variables` and loses all three.
         self.declaration_text = declaration_text
         self.variables = variables if variables is not None else []
-        self.rungs = rungs if rungs is not None else []
         self.networks = networks if networks is not None else []
+
+    @property
+    def rungs(self):
+        """Every LD rung in the POU, network grouping flattened away."""
+        return [tree for network in self.networks for tree in network.outputs]
 
 
 # --- FBD tree --------------------------------------------------------------

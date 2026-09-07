@@ -8,6 +8,7 @@ expression tree per rung.
 
 from model import (
     BLOCK,
+    COMMENT,
     IN_VARIABLE,
     JUMP,
     LABEL,
@@ -19,10 +20,12 @@ from model import (
     COIL,
     Element,
     Empty,
+    Network,
     Node,
     Parallel,
     Pou,
     Series,
+    component_finder,
     is_simple_term,
     parallel,
     series,
@@ -32,6 +35,7 @@ from plcopen import (
     block_connections,
     block_outputs,
     child_text,
+    comment_text,
     declaration_text,
     direct_connections,
     find_child,
@@ -55,6 +59,7 @@ KNOWN_KINDS = (
     JUMP,
     RETURN,
     LABEL,
+    COMMENT,
 )
 
 
@@ -80,6 +85,14 @@ def parse_ld_body(body_elem):
         local_id = child.get("localId")
         if local_id is None:
             continue
+
+        if kind == COMMENT:
+            # No logic of its own, but CODESYS writes one above each network
+            # that has a comment, which is the only thing in an LD body that
+            # says where one network ends and the next begins.
+            nodes.append(Node(local_id=local_id, kind=COMMENT, label=comment_text(child)))
+            continue
+
         is_block = kind == BLOCK
         nodes.append(
             Node(
@@ -159,13 +172,36 @@ def _bracket(text):
     return "(" + text + ")"
 
 
-def _build_block(node, by_id, visiting, via_pin):
+def _block_reference(node, via_pin):
+    """A box already drawn in this network, named by the output being read.
+
+    A block driving three outputs is one box that runs once. Rebuilding it for
+    every output drew it three times and called it three times, which reads as
+    three timers where the program has one; every reader after the first names
+    the pin it takes instead.
+    """
+    pin = via_pin
+    if pin is None and node.outputs:
+        pin = node.outputs[0][0]
+    base = node.instance_name or node.type_name or "?"
+    return Element(
+        kind=IN_VARIABLE,
+        label=(base + "." + pin) if pin else base,
+        negated=pin in node.negated_outputs,
+    )
+
+
+def _build_block(node, by_id, visiting, via_pin, drawn):
     """Build a block call, separating power flow from parameter inputs.
 
     Exactly one input carries the rung's power flow. Pins fed by a literal or
     an inVariable are parameters, not power, so the first genuinely wired pin
     wins and the rest become captions inside the box.
     """
+    if node.local_id in drawn:
+        return _block_reference(node, via_pin)
+    drawn.add(node.local_id)
+
     power_expr = Empty()
     power_pin = None
     power_negated = False
@@ -177,7 +213,7 @@ def _build_block(node, by_id, visiting, via_pin):
         if upstream is None:
             side_pins.append((connection.target_pin, "?"))
             continue
-        sub_expr = _build_expr(upstream, by_id, visiting, connection.source_pin)
+        sub_expr = _build_expr(upstream, by_id, visiting, connection.source_pin, drawn)
         if upstream.kind == IN_VARIABLE:
             # Flattened through expr_to_text, not taken from the raw label:
             # an in-place negated inVariable must keep its NOT, or the pin
@@ -267,12 +303,16 @@ def _pin_text(sub_expr, connection, hoisted):
     return text
 
 
-def _build_expr(node, by_id, visiting, via_pin=None):
+def _build_expr(node, by_id, visiting, via_pin=None, drawn=None):
     """Walk backwards from a node to the power rail, building series/parallel.
 
     A node's expression is everything feeding it (OR'd together if there is
-    more than one input) followed by the node itself.
+    more than one input) followed by the node itself. ``drawn`` carries the
+    blocks already built for this network, so a block read by several outputs
+    is drawn and called once.
     """
+    if drawn is None:
+        drawn = set()
     if node.local_id in visiting:
         # Feedback loops are not legal in a rung, but a malformed export should
         # produce a visible marker rather than blow the stack.
@@ -281,14 +321,14 @@ def _build_expr(node, by_id, visiting, via_pin=None):
     visiting = visiting | set([node.local_id])
 
     if node.kind == BLOCK:
-        return _build_block(node, by_id, visiting, via_pin)
+        return _build_block(node, by_id, visiting, via_pin, drawn)
 
     branches = []
     for connection in node.inputs:
         upstream = by_id.get(connection.ref_id)
         if upstream is None:
             continue
-        branches.append(_build_expr(upstream, by_id, visiting, connection.source_pin))
+        branches.append(_build_expr(upstream, by_id, visiting, connection.source_pin, drawn))
 
     incoming = parallel(branches) if branches else Empty()
 
@@ -299,34 +339,70 @@ def _build_expr(node, by_id, visiting, via_pin=None):
     return series([incoming, _to_element(node)])
 
 
-def build_rungs(nodes):
-    """Split a flat node list into one expression tree per rung.
+def build_networks(nodes):
+    """Group a flat node list into Networks, each holding its rungs.
 
     A rung is identified by its terminal: an element nothing else consumes.
     That is the right power rail where one exists, and the coil itself where
     the export omits it - CODESYS exports the right rail unconnected.
+
+    Networks are the connected components, as in parse_fbd - but the rails
+    are left out of the grouping. CODESYS exports one left rail for the whole
+    LD body, not one per network, so every rung in the POU hangs off the same
+    element and following that wire would fuse the lot into a single network.
+    One network per sink is no better: a block driving three outputs is one
+    network in the editor, and numbering it as three throws out every number
+    after it.
     """
     by_id = {}
     for node in nodes:
         by_id[node.local_id] = node
+
+    logic = [node for node in nodes if node.kind not in RAILS and node.kind != COMMENT]
+    known = set(node.local_id for node in logic)
+    find = component_finder(logic)
+
+    def root_of(node):
+        """Which network a terminal belongs to.
+
+        A right power rail is an anchor rather than logic, so it is not in the
+        grouping itself - but it is the terminal of the rung that ends at it,
+        and it belongs to that rung's network.
+        """
+        if node.local_id in known:
+            return find(node.local_id)
+        for connection in node.inputs:
+            if connection.ref_id in known:
+                return find(connection.ref_id)
+        return node.local_id
 
     consumed = set()
     for node in nodes:
         for connection in node.inputs:
             consumed.add(connection.ref_id)
 
-    rungs = []
+    # A block read by several outputs is built once, on the first rung that
+    # reaches it; the rest name its output pin. The set is per POU, and a
+    # block belongs to one network, so this cannot leak across networks.
+    drawn = set()
+
+    order = []
+    rungs_by_root = {}
     for node in nodes:
-        if node.local_id in consumed:
-            continue
-        if node.kind == LEFT_RAIL:
+        if node.local_id in consumed or node.kind in (LEFT_RAIL, COMMENT):
             # An unconnected left rail is an empty rung, not a terminal.
             continue
-        expr = _build_expr(node, by_id, set())
+        expr = _build_expr(node, by_id, set(), None, drawn)
         if isinstance(expr, Empty):
+            # An unconnected rail or a stray element with nothing on it.
             continue
-        rungs.append(expr)
-    return rungs
+        root = root_of(node)
+        if root not in rungs_by_root:
+            rungs_by_root[root] = []
+            order.append(root)
+        rungs_by_root[root].append(expr)
+
+    return [Network(comment="", outputs=rungs_by_root[root]) for root in order]
 
 
 LANGUAGE = "LD"
@@ -345,7 +421,7 @@ def pou_from_body(pou_elem, body_elem):
         language=LANGUAGE,
         variables=parse_interface(find_child(pou_elem, "interface")),
         declaration_text=declaration_text(pou_elem),
-        rungs=build_rungs(parse_ld_body(body_elem)),
+        networks=build_networks(parse_ld_body(body_elem)),
     )
 
 

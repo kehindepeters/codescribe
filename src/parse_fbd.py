@@ -6,7 +6,7 @@ looking for sinks nothing else consumes - but the result is a tree of calls
 rather than a series/parallel chain.
 """
 
-from model import BLOCK, Assign, Call, Jump, Label, Network, Node, OutputRef, Pou, Signal
+from model import BLOCK, COMMENT, Assign, Call, Jump, Label, Network, Node, OutputRef, Pou, Signal, component_finder
 from plcopen import (
     block_connections,
     block_outputs,
@@ -23,7 +23,6 @@ from plcopen import (
     tag,
 )
 
-COMMENT = "comment"
 IN_VARIABLE = "inVariable"
 OUT_VARIABLE = "outVariable"
 JUMP = "jump"
@@ -175,34 +174,6 @@ def _build_node(node, by_id, visiting, memo):
     return Signal(node.label or "", negated=node.negated)
 
 
-def _component_finder(logic):
-    """Union-find over the wires, ignoring direction.
-
-    Two outputs fed from one block belong to the same network, so grouping has
-    to follow wires backwards as well as forwards.
-    """
-    parent = {}
-    for node in logic:
-        parent[node.local_id] = node.local_id
-
-    def find(item):
-        root = item
-        while parent[root] != root:
-            root = parent[root]
-        while parent[item] != root:
-            parent[item], item = root, parent[item]
-        return root
-
-    for node in logic:
-        for connection in node.inputs:
-            if connection.ref_id not in parent:
-                continue
-            left, right = find(node.local_id), find(connection.ref_id)
-            if left != right:
-                parent[left] = right
-    return find
-
-
 def build_networks(nodes):
     """Group a flat node list into Networks.
 
@@ -217,7 +188,7 @@ def build_networks(nodes):
     for node in logic:
         by_id[node.local_id] = node
 
-    find = _component_finder(logic)
+    find = component_finder(logic)
 
     consumed = set()
     for node in logic:

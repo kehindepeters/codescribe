@@ -273,22 +273,28 @@ def _network_header(index, comment):
     return header + " *)"
 
 
+LD = "LD"
+
+
 def render_pou(pou):
-    """Render a POU as declaration plus ST statements, one block per network."""
+    """Render a POU as declaration plus ST statements, one block per network.
+
+    A network holds rungs in LD and call trees in FBD; they walk differently,
+    so the POU's language picks the walker.
+    """
     lines = render_declaration(pou)
     lines.append("")
 
-    for index, rung in enumerate(pou.rungs):
-        lines.append(_network_header(index, ""))
-        lines.extend(rung_to_statements(rung))
-        lines.append("")
-
     for index, network in enumerate(pou.networks):
         lines.append(_network_header(index, network.comment))
-        lines.extend(network_to_statements(network))
+        if pou.language == LD:
+            for rung in network.outputs:
+                lines.extend(rung_to_statements(rung))
+        else:
+            lines.extend(network_to_statements(network))
         lines.append("")
 
-    if not pou.rungs and not pou.networks:
+    if not pou.networks:
         lines.append("(* no networks *)")
 
     while lines and lines[-1] == "":

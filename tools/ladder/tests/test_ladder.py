@@ -263,6 +263,47 @@ check("side pin: the caption matches the ST", any("RESET := latch.Q1" in line fo
 check("side pin: the latch box is drawn", any("latch : SR" in line for line in side_pin_art))
 check("side pin: no chain folded into the pin", not any("xSet AND" in line for line in side_pin_st + side_pin_art))
 
+
+# --- one editor network, several outputs -------------------------------------
+
+# A timer driving three outputs. One network per sink made it three networks,
+# each drawing the box again and calling the timer again, and threw out the
+# number of every network after it. CODESYS exports one power rail for the
+# whole body, so the rungs cannot be told apart by what they hang off - only
+# by what they are connected to.
+TWO_COILS = os.path.join(FIXTURES, "36-3-ld-two-coils.xml")
+two_coils_pou = parse_pous(TWO_COILS)[0]
+two_coils_st = st_render.render_pou(two_coils_pou)
+two_coils_art = render_pou(two_coils_pou)
+
+check_equal("two coils: two networks, not four", len(two_coils_pou.networks), 2)
+check_equal("two coils: three outputs in the first", len(two_coils_pou.networks[0].outputs), 3)
+check_equal(
+    "two coils: one header per network",
+    len([line for line in two_coils_art if line.startswith("(* Network")]),
+    2,
+)
+check_equal("two coils: the timer is called once", len([l for l in two_coils_st if l.startswith("tmr(")]), 1)
+check_equal("two coils: one box is drawn", len([l for l in two_coils_art if "tmr : TON" in l]), 1)
+
+# All three outputs still there, and the second and third name the pin they
+# read rather than redrawing the box that produces it.
+check("two coils: the plain coil stores", "xOut1 := tmr.Q;" in two_coils_st)
+check("two coils: the set coil latches", "IF tmr.Q THEN xOut2 := TRUE; END_IF" in two_coils_st)
+check("two coils: the outVariable stores the other pin", "tElapsed := tmr.ET;" in two_coils_st)
+check("two coils: a later output names the box", any("[tmr.ET]" in line for line in two_coils_art))
+
+# The same shape in a real SP11 export: LDTesting with one coil added to its
+# first network.
+SP11_TWO_COILS = os.path.join(FIXTURES, "36-3-ld-two-coils-sp11.xml")
+sp11 = parse_pous(SP11_TWO_COILS)[0]
+sp11_st = st_render.render_pou(sp11)
+
+check_equal("sp11 two coils: two networks, not three", len(sp11.networks), 2)
+check_equal("sp11 two coils: both coils in network 1", len(sp11.networks[0].outputs), 2)
+check("sp11 two coils: the added coil is kept", any("Lamp :=" in line for line in sp11_st))
+check_equal("sp11 two coils: the timer is called once", len([l for l in sp11_st if l.startswith("TON_0(")]), 1)
+
 # A negated wired output feeding a coil, and only one bubble drawn for it.
 check("fidelity: negated wired output inverts the coil", any("xFin := NOT ctr2.Q;" in line for line in fidelity_st))
 check("fidelity: no double bubble on a wired negated output", not any("Q oo" in line for line in fidelity_art))
