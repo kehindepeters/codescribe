@@ -29,7 +29,7 @@ from model import (
     Signal,
     is_simple_term,
 )
-from parse_ld import expr_to_text
+from parse_ld import expr_to_text, pin_value
 
 
 def store_statement(target, value, storage=None, negated=False):
@@ -77,11 +77,11 @@ def rung_to_statements(rung):
             for pin, label in item.input_pins:
                 # A label of None is the power pin, fed by the rung so far.
                 value = condition if label is None else label
-                if label is None and item.power_negated:
-                    # The negation bubble on the power pin itself. A bare
-                    # rail feed has no condition, but the inversion must
-                    # still be stated or the ST reads as un-negated.
-                    value = "NOT " + _operand(value) if value else "NOT TRUE"
+                if label is None and (item.power_negated or item.power_edge):
+                    # The bubble and the P or N on the power pin itself. A
+                    # bare rail feed has no condition, but the markers must
+                    # still be stated or the ST reads as an unmarked level.
+                    value = pin_value(value or "TRUE", item.power_negated, item.power_edge)
                 if value:
                     args.append("%s := %s" % (pin, value))
             name = item.instance_name or item.type_name or "?"

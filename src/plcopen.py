@@ -83,8 +83,9 @@ def block_connections(block_elem):
     """Wires arriving at a block, tagged with the pin they land on.
 
     A pin variable can carry negated="true" - the bubble CODESYS draws on the
-    pin itself. It applies to everything arriving at that pin, so it rides on
-    each connection.
+    pin itself - and edge="rising"/"falling", the P or N that makes the pin
+    see a change rather than a level. Both apply to everything arriving at
+    that pin, so they ride on each connection.
     """
     connections = []
     for group_name in ("inputVariables", "inOutVariables"):
@@ -96,9 +97,11 @@ def block_connections(block_elem):
                 continue
             pin = var.get("formalParameter")
             pin_negated = is_true(var, "negated")
+            pin_edge = attr(var, "edge")
             for connection in direct_connections(var):
                 connection.target_pin = pin
                 connection.negated = pin_negated
+                connection.edge = pin_edge
                 connections.append(connection)
     return connections
 

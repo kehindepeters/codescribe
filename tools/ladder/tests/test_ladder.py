@@ -304,6 +304,26 @@ check_equal("sp11 two coils: both coils in network 1", len(sp11.networks[0].outp
 check("sp11 two coils: the added coil is kept", any("Lamp :=" in line for line in sp11_st))
 check_equal("sp11 two coils: the timer is called once", len([l for l in sp11_st if l.startswith("TON_0(")]), 1)
 
+
+# --- edge detection on a block pin -------------------------------------------
+
+# A contact has always carried its P; the block pin the rung's power enters
+# through had nowhere to put one, so a counter that counts once per change
+# rendered as one that counts every cycle its input is true.
+PIN_EDGE = os.path.join(FIXTURES, "36-5-ld-pin-edge.xml")
+pin_edge_pou = parse_pous(PIN_EDGE)[0]
+pin_edge_st = st_render.render_pou(pin_edge_pou)
+pin_edge_art = render_pou(pin_edge_pou)
+
+check("ld pin edge: the ST shows the trigger", "ctr(CU := R(xCount), RESET := xRst, PV := 10);" in pin_edge_st)
+check("ld pin edge: the box wall carries the marker", any("PCU" in line for line in pin_edge_art))
+check("ld pin edge: an unmarked pin stays unmarked", not any("R(xRst)" in line for line in pin_edge_st))
+
+# The contact form, which already worked, must keep working: same spelling in
+# the ST, same letter in the diagram.
+check("ld pin edge: a contact still triggers", "xEdge := R(xA);" in pin_edge_st)
+check("ld pin edge: a contact still draws its P", any(U["CONTACT_L"] + "P" + U["CONTACT_R"] in line for line in pin_edge_art))
+
 # A negated wired output feeding a coil, and only one bubble drawn for it.
 check("fidelity: negated wired output inverts the coil", any("xFin := NOT ctr2.Q;" in line for line in fidelity_st))
 check("fidelity: no double bubble on a wired negated output", not any("Q oo" in line for line in fidelity_art))

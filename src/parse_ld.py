@@ -9,6 +9,7 @@ expression tree per rung.
 from model import (
     BLOCK,
     COMMENT,
+    EDGE_FUNCTION,
     IN_VARIABLE,
     JUMP,
     LABEL,
@@ -207,6 +208,7 @@ def _build_block(node, by_id, visiting, via_pin, drawn):
     power_expr = Empty()
     power_pin = None
     power_negated = False
+    power_edge = None
     side_pins = []
     pin_blocks = []
 
@@ -225,8 +227,10 @@ def _build_block(node, by_id, visiting, via_pin, drawn):
             power_pin = connection.target_pin
             power_expr = sub_expr
             # The pin's own negation bubble; it inverts the power flow at the
-            # box wall, after everything the rung has accumulated.
+            # box wall, after everything the rung has accumulated. The P or N
+            # on that pin sits there too.
             power_negated = connection.negated
+            power_edge = connection.edge
         else:
             side_pins.append((connection.target_pin, _pin_text(sub_expr, connection, pin_blocks)))
 
@@ -255,6 +259,7 @@ def _build_block(node, by_id, visiting, via_pin, drawn):
         # the rung has none.
         output_wired=via_pin is not None,
         power_negated=power_negated,
+        power_edge=power_edge,
         negated_outputs=set(node.negated_outputs),
         stored_outputs=node.stored_outputs,
         pin_blocks=pin_blocks,
@@ -298,12 +303,24 @@ def _pin_expr_text(expr, hoisted):
     return expr_to_text(expr)
 
 
-def _pin_text(sub_expr, connection, hoisted):
-    """A side pin's caption, honouring the pin's own negation bubble."""
-    text = _pin_expr_text(sub_expr, hoisted)
-    if connection.negated:
-        return "NOT " + _bracket(text) if text else "NOT ?"
+def pin_value(text, negated=False, edge=None):
+    """A value as the pin receives it: bubble first, then edge detection.
+
+    The bubble inverts what arrives; the P or N then triggers on that value
+    changing. Dropping the edge renders a block that runs once per change as
+    one that runs every cycle its input is true.
+    """
+    if negated:
+        text = "NOT " + _bracket(text) if text else "NOT ?"
+    function = EDGE_FUNCTION.get(edge)
+    if function:
+        return function + "(" + (text or "?") + ")"
     return text
+
+
+def _pin_text(sub_expr, connection, hoisted):
+    """A side pin's caption, honouring the pin's own bubble and edge."""
+    return pin_value(_pin_expr_text(sub_expr, hoisted), connection.negated, connection.edge)
 
 
 def _build_expr(node, by_id, visiting, via_pin=None, drawn=None):

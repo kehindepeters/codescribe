@@ -19,6 +19,10 @@ import charset
 from layout import Block
 from model import BLOCK, COIL, CONTACT, Element, Empty, Parallel, Series
 
+# The letter a contact carries for edge detection, reused on a block's power
+# pin so both read the same.
+EDGE_MARKER = {"rising": "P", "falling": "N"}
+
 POU_TYPE_KEYWORDS = {
     "program": "PROGRAM",
     "functionBlock": "FUNCTION_BLOCK",
@@ -135,7 +139,11 @@ def _render_block(element):
     for index in range(rows):
         gap = inner - len(left[index]) - len(right[index])
         left_edge = chars["PIN_L"] if wired[index] else chars["V"]
-        if wired[index] and element.power_negated:
+        if wired[index] and element.power_edge in EDGE_MARKER:
+            # The P or N on the power pin, drawn on the box wall in the same
+            # place the bubble goes and the same letter a contact carries.
+            left_edge = EDGE_MARKER[element.power_edge]
+        elif wired[index] and element.power_negated:
             # The negation bubble on the power pin, drawn on the box wall.
             left_edge = "o"
         # Only the active output continues onward, and only if consumed.

@@ -391,6 +391,22 @@ check("output pin store: the ST guards the write", "IF tmr.Q THEN xHeld := TRUE;
 check("output pin store: the pin arrow is marked", any("Q =S> xHeld" in line for line in storage_art))
 
 
+# --- edge detection on a block pin -------------------------------------------
+
+# edge="rising" on a pin was read by nobody, so a counter that counts once per
+# change rendered as one that counts every cycle its input is true. Contacts
+# have always carried the marker; the pins had nowhere to put it.
+PIN_EDGE = os.path.join(HERE, "fixtures", "36-5-fbd-pin-edge.xml")
+pin_edge = parse_fbd.parse_pous(PIN_EDGE)[0]
+pin_edge_st = st_render.render_pou(pin_edge)
+pin_edge_art = fbd_render.render_network(pin_edge.networks[0])
+
+check_equal("pin edge: the edge reaches the tree", box(pin_edge.networks[0].outputs[0].source).inputs[0][1].edge, "rising")
+check("pin edge: the ST shows the trigger", "ctr(CU := R(xPulse), RESET := xRst);" in pin_edge_st)
+check("pin edge: the diagram marks the pin", any("R(xPulse)" in line for line in pin_edge_art))
+check("pin edge: an unmarked pin stays unmarked", not any("R(xRst)" in line for line in pin_edge_st))
+
+
 # --- language dispatch -----------------------------------------------------
 
 check_equal("LD parser ignores FBD bodies", parse_ld.parse_pous(FBD_SOURCE), [])

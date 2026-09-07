@@ -57,13 +57,18 @@ class Connection(object):
     ``negated`` is the bubble CODESYS draws on the *pin itself* (negated="true"
     on the pin's variable element) - separate from a negated inVariable, and
     just as logic-inverting if dropped.
+
+    ``edge`` is the P or N CODESYS draws on the pin: the pin sees a single
+    scan when its value changes, not the value itself. A block behind one
+    runs once per edge, and reads as running every cycle without it.
     """
 
-    def __init__(self, ref_id, source_pin=None, target_pin=None, negated=False):
+    def __init__(self, ref_id, source_pin=None, target_pin=None, negated=False, edge=None):
         self.ref_id = ref_id
         self.source_pin = source_pin
         self.target_pin = target_pin
         self.negated = negated
+        self.edge = edge  # "rising" | "falling" | None
 
     def __repr__(self):
         return "Connection(%s, source_pin=%r, target_pin=%r)" % (self.ref_id, self.source_pin, self.target_pin)
@@ -184,30 +189,39 @@ class Pou(object):
 # by a named value or by another block's output.
 
 
+# How an edge-triggered pin reads. The same spelling the LD contacts use, so
+# both languages grep alike.
+EDGE_FUNCTION = {"rising": "R", "falling": "F"}
+
+
 class Signal(object):
     """A named value entering a network: a variable, a literal, or nothing.
 
     CODESYS can negate an inVariable in place, which is easy to miss and
-    inverts the logic if it is dropped.
+    inverts the logic if it is dropped. ``edge`` is the pin's own P or N: the
+    bubble inverts what arrives, and the edge detector then sees that value
+    change, so the negation goes inside.
     """
 
-    def __init__(self, label, negated=False):
+    def __init__(self, label, negated=False, edge=None):
         self.label = label
         self.negated = negated
+        self.edge = edge
 
     @property
     def text(self):
         label = self.label or ""
-        if not self.negated:
-            return label
-        # A compound expression must keep its parentheses or the logic
-        # regroups - see is_simple_term for the precedence trap.
-        if is_simple_term(label):
-            return "NOT " + label
-        return "NOT (" + label + ")"
+        if self.negated:
+            # A compound expression must keep its parentheses or the logic
+            # regroups - see is_simple_term for the precedence trap.
+            label = ("NOT " + label) if is_simple_term(label) else ("NOT (" + label + ")")
+        function = EDGE_FUNCTION.get(self.edge)
+        if function:
+            return function + "(" + label + ")"
+        return label
 
     def __repr__(self):
-        return "Signal(%r, negated=%r)" % (self.label, self.negated)
+        return "Signal(%r, negated=%r, edge=%r)" % (self.label, self.negated, self.edge)
 
 
 class Jump(object):
@@ -383,6 +397,7 @@ class Element(object):
         active_output=None,
         output_wired=False,
         power_negated=False,
+        power_edge=None,
         negated_outputs=None,
         stored_outputs=None,
         pin_blocks=None,
@@ -401,6 +416,9 @@ class Element(object):
         # through, and the set of output pins carrying one. Both invert the
         # logic in place if dropped.
         self.power_negated = power_negated
+        # The P or N on that same pin: the block runs once per edge, not once
+        # per scan the condition holds.
+        self.power_edge = power_edge
         self.negated_outputs = negated_outputs if negated_outputs is not None else set()
         # {pin: "set" | "reset"} for inline assignments that store instead of
         # assigning outright.

@@ -6,7 +6,21 @@ looking for sinks nothing else consumes - but the result is a tree of calls
 rather than a series/parallel chain.
 """
 
-from model import BLOCK, COMMENT, Assign, Call, Jump, Label, Network, Node, OutputRef, Pou, Signal, component_finder
+from model import (
+    BLOCK,
+    COMMENT,
+    EDGE_FUNCTION,
+    Assign,
+    Call,
+    Jump,
+    Label,
+    Network,
+    Node,
+    OutputRef,
+    Pou,
+    Signal,
+    component_finder,
+)
 from plcopen import (
     attr,
     block_connections,
@@ -109,6 +123,27 @@ def _negate(source):
     )
 
 
+def _edge(source, edge):
+    """Wrap a pin's source in the edge detection its P or N marker demands.
+
+    A Signal carries the marker itself; anything else becomes an explicit R
+    or F box, the same shape _negate uses, so the trigger is visible in both
+    the ST and the diagram rather than reading as a plain level.
+    """
+    function = EDGE_FUNCTION.get(edge)
+    if function is None:
+        return source
+    if isinstance(source, Signal):
+        return Signal(source.label, negated=source.negated, edge=edge)
+    return Call(
+        type_name=function,
+        inputs=[("In", source)],
+        outputs=[("Out", None)],
+        active_output="Out",
+        wired_outputs=["Out"],
+    )
+
+
 def _build(node, by_id, visiting, via_pin=None, memo=None):
     """Build the tree feeding a node, as read through ``via_pin``.
 
@@ -145,6 +180,10 @@ def _build_node(node, by_id, visiting, memo):
             if connection.negated and source is not None:
                 # The bubble on the pin itself, not on what feeds it.
                 source = _negate(source)
+            if connection.edge and source is not None:
+                # The P or N on that same pin, applied after the bubble: the
+                # detector sees the value the pin actually receives.
+                source = _edge(source, connection.edge)
             inputs.append((connection.target_pin, source))
 
         return Call(
