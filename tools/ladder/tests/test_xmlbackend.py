@@ -29,6 +29,22 @@ CODESYS = os.path.join(FIXTURES, "codesys")
 failures = []
 
 
+def astral_reference():
+    """A character outside the Basic Multilingual Plane, as one reference.
+
+    IronPython holds strings as UTF-16, so such a character is a surrogate
+    pair, and encoding it a unit at a time writes two numeric references for
+    one character. A lone surrogate is not a legal XML character: System.Xml
+    accepts it, expat rejects the whole document - an export that parses
+    inside CODESYS and nowhere else.
+
+    Written as the UTF-8 bytes a real file holds, so this source stays ASCII
+    and loads under both interpreters.
+    """
+    data = b"<x>hi \xf0\x9f\x98\x80 there</x>"
+    return plcopen._to_ascii(data)
+
+
 def check(name, condition, detail=""):
     if condition:
         print("OK      " + name)
@@ -68,6 +84,11 @@ print("available backends: " + ", ".join(xmlbackend.available()))
 print("active backend:     " + xmlbackend.active())
 
 root = xmlbackend.parse(SAMPLE)
+
+# U+1F600 is one character; it must come back as one reference, not as the
+# two surrogates it is stored as.
+check_equal("an astral character is one reference", astral_reference(), b"<x>hi &#128512; there</x>")
+check("no lone surrogate reaches the parser", b"&#55357;" not in astral_reference())
 
 check_equal("namespace is stripped from the tag", plcopen.tag(root), "root")
 first = list(root)[0]

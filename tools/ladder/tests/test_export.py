@@ -67,8 +67,13 @@ class FakePou(object):
     def get_name(self):
         return self._name
 
-    def export_xml(self, path, recursive, declarations_as_plaintext=None):
-        self.export_calls.append((path, recursive, declarations_as_plaintext))
+    # The documented SP11 overload, in full:
+    # export_xml(path, recursive, export_folder_structure, declarations_as_plaintext).
+    # Taking fewer arguments than that made the first attempt fail to bind, so
+    # the tests exercised a fallback and a swap of the two booleans would have
+    # gone unnoticed - which is the one mistake this signature can hide.
+    def export_xml(self, path, recursive, export_folder_structure=None, declarations_as_plaintext=None):
+        self.export_calls.append((path, recursive, export_folder_structure, declarations_as_plaintext))
         if self._source is None:
             raise RuntimeError("export_xml exploded")
         shutil.copyfile(self._source, path)
@@ -118,11 +123,13 @@ try:
     check("ladder pou is rendered", graphical_export.write_rendered_text(pou, base) is True)
     check("derived file lands beside the xml", os.path.exists(base + ".txt"))
     check_equal("export_xml is asked for a single object", pou.export_calls[0][1], False)
+    check_equal("the documented four-argument overload binds", len(pou.export_calls[0]), 4)
+    check_equal("no folder structure is asked for", pou.export_calls[0][2], False)
     # Without this the declaration loses comments, pragmas and attributes.
-    check_equal("plaintext declarations are requested", pou.export_calls[0][2], True)
+    check_equal("plaintext declarations are requested", pou.export_calls[0][3], True)
 
     content = read(base + ".txt")
-    check("derived file leads with the declaration", content.startswith("PROGRAM LD_TEST"))
+    check("derived file leads with the declaration", "PROGRAM LD_TEST" in content.split("\n")[1])
     # The diagram file holds the diagram. The two notations were written into
     # one file at first and that was worse, not better: the same network twice,
     # one rendering after the other, is harder to read than either alone.
@@ -628,6 +635,50 @@ try:
     util.finalize_export_folder(target, staging)
     check("a real export still swaps in", os.path.exists(os.path.join(target, "NEW.st")))
     check("the swap still replaces the old copy", not os.path.exists(os.path.join(target, "KEEP.st")))
+finally:
+    shutil.rmtree(workspace)
+
+
+# --- a locked folder must not leave last export's files behind ---------------
+
+# When the folder cannot be renamed the staged files are copied into it
+# instead. Copying alone leaves anything the export did not write in place: a
+# rendering from a previous export sitting beside a new native xml, describing
+# a POU that has since changed, with nothing to say so.
+workspace = tempfile.mkdtemp()
+try:
+    target = os.path.join(workspace, "Project")
+    os.makedirs(os.path.join(target, "application"))
+    for name in ("application/GONE.txt", "application/GONE.xml"):
+        handle = io.open(os.path.join(target, name), "w", encoding="utf-8")
+        handle.write(u"from the previous export\n")
+        handle.close()
+
+    staging = util.begin_export_folder(target)
+    os.makedirs(os.path.join(staging, "application"))
+    handle = io.open(os.path.join(staging, "application", "STAYS.xml"), "w", encoding="utf-8")
+    handle.write(u"from this export\n")
+    handle.close()
+
+    real_rename = os.rename
+
+    def locked_rename(source, destination):
+        # Only the folder swap is blocked, which is what a handle on the
+        # folder does; the files inside it stay writable.
+        if os.path.isdir(source):
+            raise OSError("folder is locked")
+        return real_rename(source, destination)
+
+    os.rename = locked_rename
+    try:
+        util.finalize_export_folder(target, staging)
+    finally:
+        os.rename = real_rename
+
+    check("the locked path still writes this export", os.path.exists(os.path.join(target, "application", "STAYS.xml")))
+    check("a stale rendering is removed", not os.path.exists(os.path.join(target, "application", "GONE.txt")))
+    check("a stale source is removed too", not os.path.exists(os.path.join(target, "application", "GONE.xml")))
+    check("the staging folder is cleaned up", not os.path.exists(staging))
 finally:
     shutil.rmtree(workspace)
 

@@ -102,12 +102,12 @@ check("network 1 comment is captured", comment1.startswith("// Function Block to
 hostile_comment = "// first\nsecond *) third"
 check_equal(
     "network comments cannot break generated block comments",
-    fbd_render.render_pou(Pou("HOSTILE", "program", networks=[Network(hostile_comment, [Signal("x")])]))[2],
+    fbd_render.render_pou(Pou("HOSTILE", "program", networks=[Network(hostile_comment, [Signal("x")])]))[3],
     "(* Network 1: first second * ) third *)",
 )
 check_equal(
     "ST network comments cannot break generated block comments",
-    st_render.render_pou(Pou("HOSTILE", "program", networks=[Network(hostile_comment, [Signal("x")])]))[2],
+    st_render.render_pou(Pou("HOSTILE", "program", networks=[Network(hostile_comment, [Signal("x")])]))[3],
     "(* Network 1: first second * ) third *)",
 )
 
@@ -118,7 +118,7 @@ check_equal(
     "network titles cannot break generated block comments",
     fbd_render.render_pou(
         Pou("HOSTILE", "program", networks=[Network("", [Signal("x")], title=hostile_title)])
-    )[2],
+    )[3],
     "(* Network 1: one * ) two *)",
 )
 

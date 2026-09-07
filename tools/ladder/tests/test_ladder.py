@@ -141,7 +141,10 @@ except Exception as error:  # pragma: no cover - diagnostic path
 rendered = render_pou(pou)
 
 check("no trailing whitespace", all(line == line.rstrip() for line in rendered))
-check("declaration comes first", rendered[0] == "PROGRAM Motor_Control")
+# A rebuilt declaration says so before it says anything else: it is not what
+# CODESYS holds, and nothing else in the file would tell you.
+check("a rebuilt declaration is marked", rendered[0].startswith("(* Declaration rebuilt"))
+check("declaration comes first", rendered[1] == "PROGRAM Motor_Control")
 
 # Referenced through the charset table rather than as literal glyphs: this
 # source file has to stay pure ASCII for IronPython 2.7 to load it at all.
@@ -335,6 +338,26 @@ check_equal("sp11 two coils: two networks, not three", len(sp11.networks), 2)
 check_equal("sp11 two coils: both coils in network 1", len(sp11.networks[0].outputs), 2)
 check("sp11 two coils: the added coil is kept", any("Lamp :=" in line for line in sp11_st))
 check_equal("sp11 two coils: the timer is called once", len([l for l in sp11_st if l.startswith("TON_0(")]), 1)
+
+
+# --- an EXECUTE box on a rung ------------------------------------------------
+
+# An EXECUTE box has no body of its own: the whole of it is inline ST in an
+# addData element. The FBD renderer has always drawn it; the ladder one drew
+# an empty rectangle and dropped every line of the logic.
+LD_EXECUTE = os.path.join(FIXTURES, "ld_execute.plcopen.xml")
+execute_pou = parse_pous(LD_EXECUTE)[0]
+execute_st = st_render.render_pou(execute_pou)
+execute_art = render_pou(execute_pou)
+
+check_equal("execute: the inline ST is read", len(execute_pou.networks[0].outputs[0].items[-1].st_code), 4)
+check("execute: the diagram shows the body", any("iCount := iCount + 1;" in line for line in execute_art))
+check("execute: the box is still drawn", any("EXECUTE" in line for line in execute_art))
+# The rung condition is what decides whether the box runs, so it guards the
+# body rather than being dropped for looking redundant.
+check("execute: the ST guards the body with the rung", "IF xRun THEN" in execute_st)
+check("execute: the body reaches the ST", any("iCount := iCount + 1;" in line for line in execute_st))
+check("execute: no call to a box with no body", not any(line.startswith("EXECUTE(") for line in execute_st))
 
 
 # --- edge detection on a block pin -------------------------------------------
@@ -547,7 +570,8 @@ check_equal("the rendering leads with it", render_pou(plain_pou)[0], "{attribute
 # Older exports carry no plaintext, and must still render something.
 structured_pou = parse_pous(with_interface(STRUCTURED_INTERFACE))[0]
 check_equal("no plaintext means none is invented", structured_pou.declaration_text, None)
-check_equal("the structured interface is the fallback", render_declaration(structured_pou)[0], "PROGRAM PLAIN")
+check_equal("the structured interface is the fallback", render_declaration(structured_pou)[1], "PROGRAM PLAIN")
+check("the fallback says it is one", render_declaration(structured_pou)[0].startswith("(* Declaration rebuilt"))
 check("the fallback still lists the variable", any("xStart : BOOL;" in line for line in render_declaration(structured_pou)))
 
 # The shape CODESYS actually writes, confirmed by diagnosing a real project:

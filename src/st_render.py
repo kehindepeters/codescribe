@@ -73,6 +73,17 @@ def rung_to_statements(rung):
             # rung's condition.
             for pin_block in item.pin_blocks:
                 statements.extend(rung_to_statements(pin_block))
+            if item.st_code:
+                # An EXECUTE box is inline ST already, and the rung condition
+                # is what decides whether it runs. Emitting a call to a box
+                # that has no body loses the whole of it.
+                if condition:
+                    statements.append("IF %s THEN" % condition)
+                    statements.extend("    " + line for line in item.st_code)
+                    statements.append("END_IF")
+                else:
+                    statements.extend(item.st_code)
+                continue
             args = []
             for pin, label in item.input_pins:
                 # A label of None is the power pin, fed by the rung so far.

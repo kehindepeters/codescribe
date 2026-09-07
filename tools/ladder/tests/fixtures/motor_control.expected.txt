@@ -1,3 +1,4 @@
+(* Declaration rebuilt from the structured interface: comments, pragmas and attributes are missing; an omitted type reads UNKNOWN. *)
 PROGRAM Motor_Control
 VAR
     Start_PB : BOOL;
@@ -23,4 +24,3 @@ END_VAR
 (* Network 3 *)
 │   Reset_PB   Ack   Fault_Latch
 ├─────┤ ├──────┤/├───────(R)───────┤
-

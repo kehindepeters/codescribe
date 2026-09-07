@@ -37,6 +37,7 @@ from plcopen import (
     attr,
     block_connections,
     block_outputs,
+    block_st_code,
     child_text,
     comment_text,
     declaration_text,
@@ -120,6 +121,7 @@ def parse_ld_body(body_elem):
                 type_name=child.get("typeName") if is_block else None,
                 instance_name=child.get("instanceName") if is_block else None,
                 outputs=block_outputs(child) if is_block else None,
+                st_code=block_st_code(child) if is_block else None,
                 negated_outputs=negated_output_pins(child) if is_block else None,
                 stored_outputs=stored_output_pins(child) if is_block else None,
             )
@@ -270,6 +272,7 @@ def _build_block(node, by_id, visiting, via_pin, drawn):
         # via_pin is set by whatever consumed this block; a block terminating
         # the rung has none.
         output_wired=via_pin is not None,
+        st_code=list(node.st_code),
         power_negated=power_negated,
         power_edge=power_edge,
         negated_outputs=set(node.negated_outputs),

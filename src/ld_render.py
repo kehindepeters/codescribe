@@ -380,6 +380,22 @@ def _render_wire(expr):
     return lines
 
 
+def _inline_st(expr, found):
+    """Collect the inline ST of any EXECUTE box on this rung."""
+    if isinstance(expr, Series):
+        for item in expr.items:
+            _inline_st(item, found)
+    elif isinstance(expr, Parallel):
+        for branch in expr.branches:
+            _inline_st(branch, found)
+    elif isinstance(expr, Element):
+        for pin_block in expr.pin_blocks:
+            _inline_st(pin_block, found)
+        if expr.st_code:
+            found.append(expr)
+    return found
+
+
 def render_rung(expr):
     """Render one rung, bounded by the power rails.
 
@@ -391,6 +407,11 @@ def render_rung(expr):
     for pin_block in _pin_block_rungs(expr, []):
         lines.extend(_render_wire(pin_block))
     lines.extend(_render_wire(expr))
+    # An EXECUTE box is nothing but inline ST; the box on its own is an empty
+    # rectangle where the logic should be.
+    for element in _inline_st(expr, []):
+        lines.append("")
+        lines.extend("    " + line for line in element.st_code)
     return lines
 
 
@@ -406,8 +427,16 @@ def render_declaration(pou):
     if pou.declaration_text:
         return pou.declaration_text.split("\n")
 
+    # The rebuilt form is not what CODESYS holds: the structured interface has
+    # nowhere to put a comment, a pragma or an attribute, and a variable whose
+    # type the export omits comes back as UNKNOWN. The summary says how many
+    # POUs this happened to; the file has to say that it is one of them.
     keyword = POU_TYPE_KEYWORDS.get(pou.pou_type, "PROGRAM")
-    lines = [keyword + " " + pou.name]
+    lines = [
+        "(* Declaration rebuilt from the structured interface:"
+        " comments, pragmas and attributes are missing; an omitted type reads UNKNOWN. *)",
+        keyword + " " + pou.name,
+    ]
 
     scope = None
     for variable in pou.variables:

@@ -1,3 +1,4 @@
+(* Declaration rebuilt from the structured interface: comments, pragmas and attributes are missing; an omitted type reads UNKNOWN. *)
 PROGRAM LD_TEST
 VAR
     Sensor1 : BOOL;

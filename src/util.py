@@ -34,10 +34,33 @@ def begin_export_folder(target_folder):
     return staging_folder
 
 
+def _remove_stale_files(staging_folder, target_folder):
+    """Delete target files this export did not write. Returns those that stay.
+
+    The swap path replaces the folder wholesale, so anything the export did
+    not produce is gone by definition. The sync path has to do the same, or a
+    rendering from a previous export is left beside a new native xml and
+    describes a POU that has since changed - with nothing to say so. Renaming
+    a folder is what a lock stops; deleting a file inside it usually still
+    works, and where it does not the file is named rather than left silent.
+    """
+    stale = []
+    for dir_path, _dir_names, file_names in os.walk(target_folder):
+        relative = os.path.relpath(dir_path, target_folder)
+        source = staging_folder if relative == "." else os.path.join(staging_folder, relative)
+        for file_name in file_names:
+            if os.path.exists(os.path.join(source, file_name)):
+                continue
+            try:
+                os.remove(os.path.join(dir_path, file_name))
+            except (OSError, IOError):
+                stale.append(os.path.join(dir_path, file_name))
+    return stale
+
+
 def _sync_export_files(staging_folder, target_folder):
-    # Overwrite sync only; files that exist in the target but not in staging are
-    # left in place, because deleting them would require the same folder access
-    # that already failed for the rename.
+    # Overwrite sync; anything in the target the export did not write is
+    # removed afterwards by _remove_stale_files.
     for dir_path, dir_names, file_names in os.walk(staging_folder):
         relative = os.path.relpath(dir_path, staging_folder)
         destination = target_folder if relative == "." else os.path.join(target_folder, relative)
@@ -81,6 +104,7 @@ def finalize_export_folder(target_folder, staging_folder):
         # the target folder. Fall back to copying the staged files into it.
         try:
             _sync_export_files(staging_folder, target_folder)
+            stale = _remove_stale_files(staging_folder, target_folder)
             shutil.rmtree(staging_folder)
         except (OSError, IOError):
             raise ExportFolderLockedError(
@@ -93,6 +117,13 @@ def finalize_export_folder(target_folder, staging_folder):
                 + str(rename_error)
             )
         print("Export folder " + target_folder + " is in use; synced the staged files into it instead of swapping folders.")
+        if stale:
+            print(
+                "WARNING: "
+                + str(len(stale))
+                + " file(s) this export did not write could not be removed and are now stale: "
+                + ", ".join(stale[:6])
+            )
         return
     try:
         if os.path.exists(backup_folder):

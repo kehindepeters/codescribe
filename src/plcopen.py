@@ -241,15 +241,22 @@ SCOPE_TAGS = {
 
 
 def _type_name(var_elem):
+    """The declared type, or UNKNOWN where the export does not carry one.
+
+    Not BOOL: a variable whose type is missing is a variable whose type this
+    file does not know, and calling it BOOL states a type the program may not
+    have. UNKNOWN does not compile, which is the point - the rendered
+    declaration is for reading, and it should not read as fact.
+    """
     type_elem = find_child(var_elem, "type")
     if type_elem is None:
-        return "BOOL"
+        return "UNKNOWN"
     for child in type_elem:
         name = tag(child)
         if name == "derived":
             return child.get("name") or "UNKNOWN"
         return name
-    return "BOOL"
+    return "UNKNOWN"
 
 
 def _initial_value(var_elem):
@@ -412,14 +419,37 @@ def _to_ascii(data):
         # preserves every byte as a character so nothing is lost.
         text = data.decode("latin-1")
 
+    # A character outside the Basic Multilingual Plane is a surrogate pair in
+    # a UTF-16 string, which is what IronPython has. Encoding that pair one
+    # unit at a time writes two references for one character, and a lone
+    # surrogate is not a legal XML character: System.Xml lets it through,
+    # expat rejects the document outright. So the same export parses inside
+    # CODESYS and fails everywhere else.
+    if any(0xD800 <= ord(character) <= 0xDBFF for character in text):
+        return _references(text)
+
     try:
         # This error handler does exactly the job, natively.
         return text.encode("ascii", "xmlcharrefreplace")
     except (LookupError, ValueError):
-        pieces = []
-        for character in text:
-            pieces.append(character if ord(character) < 128 else "&#%d;" % ord(character))
-        return "".join(pieces).encode("ascii")
+        return _references(text)
+
+
+def _references(text):
+    """Numeric references, one per character, surrogate pairs recombined."""
+    pieces = []
+    index = 0
+    while index < len(text):
+        code = ord(text[index])
+        step = 1
+        if 0xD800 <= code <= 0xDBFF and index + 1 < len(text):
+            low = ord(text[index + 1])
+            if 0xDC00 <= low <= 0xDFFF:
+                code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
+                step = 2
+        pieces.append(text[index] if code < 128 else "&#%d;" % code)
+        index += step
+    return "".join(pieces).encode("ascii")
 
 
 # XML 1.0 forbids these outright - they cannot even be written as a numeric

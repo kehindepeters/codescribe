@@ -1,3 +1,4 @@
+(* Declaration rebuilt from the structured interface: comments, pragmas and attributes are missing; an omitted type reads UNKNOWN. *)
 PROGRAM FB_TESTING
 VAR CONSTANT
     uiMinVoltage : UINT := 5000;
@@ -29,4 +30,3 @@ uiMinVoltage──────┤In2       │  │           │     │       
                   └──────────┘  │           │     └─────────────────────────────────────────┘
 T#5S────────────────────────────┤PT       ET│
                                 └───────────┘
-

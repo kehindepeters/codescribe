@@ -466,6 +466,7 @@ class Element(object):
         negated_outputs=None,
         stored_outputs=None,
         pin_blocks=None,
+        st_code=None,
     ):
         self.kind = kind
         self.label = label
@@ -497,6 +498,9 @@ class Element(object):
         # rendered and emitted before this block, in the order the pins were
         # wired, because that is the order they execute in.
         self.pin_blocks = pin_blocks if pin_blocks is not None else []
+        # An EXECUTE box carries inline ST as its whole body. Drawing the box
+        # without it leaves an empty rectangle where the logic should be.
+        self.st_code = st_code if st_code is not None else []
 
     @property
     def title(self):
