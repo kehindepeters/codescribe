@@ -1,0 +1,51 @@
+PROGRAM FB_TESTING
+(***********************************************************************************************
+Object Name	: PLC_SUPPLY
+Descrition	: Program to control the System Supply Switch to ensure the PLC turns OFF when the ignition turns OFF.
+Author		: KP
+Date		: 17/06/25
+Rev			: P1
+***********************************************************************************************)
+VAR CONSTANT
+	uiMinVoltage 		: UINT := 5000;    // Minimum Voltage in mV
+END_VAR
+VAR
+	fbSystemSupply 	: ifmIOcommon.SystemSupply; // Function Block to monitor supply voltage on VBB15 (from ignition)
+	fbSupplySwitch 	: ifmIOcommon.SupplySwitch; // Function Block to turn ON/OFF latching switch on VBB15 supply (from ignition)
+	uiCurrSupplyVolt	: UINT ;    // Operating Voltage in mV
+	TOF_0: TOF;
+	Test: BOOL;
+	dude: BOOL;
+	fbenable: TON;
+	xResult : BOOL;
+	xTimerDone : BOOL;
+END_VAR
+
+(* Network 1: Function Block to monitor supply voltage on VBB15 (from ignition) *)
+                                            fbSystemSupply : ifmIOcommon.SystemSupply
+                                           ┌─────────────────────────────────────────┐
+ifmIOcommon.SYS_VOLTAGE_CHANNEL.VBB15──────┤eChannel                           xError│
+ifmIOcommon.MODE_SYSTEM_SUPPLY.SYS_SUPPLY──┤eMode                           eDiagInfo│
+                                           │eFilter                         xPrepared│
+                                           │                             uiOutVoltage├───> uiCurrSupplyVolt
+                                           └─────────────────────────────────────────┘
+
+(* Network 2: Comment only network *)
+(* label: ByeBye *)
+
+(* Network 3: Comment only network with comment slash *)
+
+(* Network 4: (* Comment only network with brackets * ) *)
+Test───>> ByeBye
+
+(* Network 5: comment for the sakes of comments *)
+       fbenable : TON
+      ┌──────────────┐
+Test──┤EN         ENO├─────────────────┬────> xResult
+Test──┤IN           Q├───> xTimerDone  │           OR           AND
+T#5s──┤PT          ET│                 │      ┌──────────┐  ┌──────────┐
+      └──────────────┘                 └──────┤In1   Out1├──┤In1   Out1├───> Test
+                                        dude──┤In2       │  │          │
+                                              └──────────┘  │          │
+                                        xTimerDone──────────┤In2       │
+                                                            └──────────┘

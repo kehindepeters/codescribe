@@ -1,0 +1,45 @@
+(* Equivalent Structured Text for a graphical POU, written by codescribe.
+   READ ONLY. This is a rendering of the native xml beside it, not a
+   translation: it is not guaranteed to compile and must never be imported
+   or pasted back into CODESYS. The native xml is the source. *)
+
+PROGRAM FB_TESTING
+(***********************************************************************************************
+Object Name	: PLC_SUPPLY
+Descrition	: Program to control the System Supply Switch to ensure the PLC turns OFF when the ignition turns OFF.
+Author		: KP
+Date		: 17/06/25
+Rev			: P1
+***********************************************************************************************)
+VAR CONSTANT
+	uiMinVoltage 		: UINT := 5000;    // Minimum Voltage in mV
+END_VAR
+VAR
+	fbSystemSupply 	: ifmIOcommon.SystemSupply; // Function Block to monitor supply voltage on VBB15 (from ignition)
+	fbSupplySwitch 	: ifmIOcommon.SupplySwitch; // Function Block to turn ON/OFF latching switch on VBB15 supply (from ignition)
+	uiCurrSupplyVolt	: UINT ;    // Operating Voltage in mV
+	TOF_0: TOF;
+	Test: BOOL;
+	dude: BOOL;
+	fbenable: TON;
+	xResult : BOOL;
+	xTimerDone : BOOL;
+END_VAR
+
+(* Network 1: Function Block to monitor supply voltage on VBB15 (from ignition) *)
+fbSystemSupply(eChannel := ifmIOcommon.SYS_VOLTAGE_CHANNEL.VBB15, eMode := ifmIOcommon.MODE_SYSTEM_SUPPLY.SYS_SUPPLY);
+uiCurrSupplyVolt := fbSystemSupply.uiOutVoltage;
+
+(* Network 2: Comment only network *)
+(* label: ByeBye *)
+
+(* Network 3: Comment only network with comment slash *)
+
+(* Network 4: (* Comment only network with brackets * ) *)
+IF Test THEN (* JMP ByeBye *) END_IF
+
+(* Network 5: comment for the sakes of comments *)
+fbenable(EN := Test, IN := Test, PT := T#5s);
+xTimerDone := fbenable.Q;
+xResult := fbenable.ENO;
+Test := (fbenable.ENO OR dude) AND xTimerDone;

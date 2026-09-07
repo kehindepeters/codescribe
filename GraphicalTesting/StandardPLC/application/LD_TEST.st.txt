@@ -1,0 +1,31 @@
+(* Equivalent Structured Text for a graphical POU, written by codescribe.
+   READ ONLY. This is a rendering of the native xml beside it, not a
+   translation: it is not guaranteed to compile and must never be imported
+   or pasted back into CODESYS. The native xml is the source. *)
+
+PROGRAM LD_TEST
+VAR
+	Sensor1: BOOL;
+	Sensor2: BOOL;
+	sensor3: BOOL;
+	PowerOn: BOOL;
+	TON_0: TON;
+	CTU_0: CTU;
+	PowerOff: BOOL;
+END_VAR
+
+(* Network 1: comment without backslash *)
+(* title: Try me Codesys I swear *)
+IF (Sensor1 OR sensor3) AND NOT Sensor2 THEN PowerOn := TRUE; END_IF
+
+(* Network 2 *)
+(* JMP TestJump *)
+
+(* Network 3: Comment *)
+(* title: header text *)
+TON_0(IN := PowerOn, PT := T#5S);
+CTU_0(CU := TON_0.Q, RESET := PowerOff, PV := 10);
+IF CTU_0.Q THEN PowerOff := FALSE; END_IF
+
+(* Network 4 *)
+(* label: TestJump *)

@@ -1,3 +1,15 @@
+# CODESYS working files. None of these belong in the repository:
+# a .project is a large binary that every clone then carries for ever, and it
+# and the .opt session files carry device identifiers - serial numbers and
+# gateway addresses - along with the user and machine name in the .~u lock.
+# The template and the exported sources together regenerate the project.
+*.project
+*.opt
+*.~u
+
+# Review correspondence. Kept beside the checkout, not in it.
+review/
+
 .vscode/
 
 # Claude Code's per-developer tool permissions. Machine-specific paths, and

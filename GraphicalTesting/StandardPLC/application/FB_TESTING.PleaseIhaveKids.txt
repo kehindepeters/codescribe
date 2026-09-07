@@ -1,0 +1,27 @@
+(* FB_TESTING.PleaseIhaveKids - the declaration below is the parent POU's *)
+
+PROGRAM FB_TESTING
+(***********************************************************************************************
+Object Name	: PLC_SUPPLY
+Descrition	: Program to control the System Supply Switch to ensure the PLC turns OFF when the ignition turns OFF.
+Author		: KP
+Date		: 17/06/25
+Rev			: P1
+***********************************************************************************************)
+VAR CONSTANT
+	uiMinVoltage 		: UINT := 5000;    // Minimum Voltage in mV
+END_VAR
+VAR
+	fbSystemSupply 	: ifmIOcommon.SystemSupply; // Function Block to monitor supply voltage on VBB15 (from ignition)
+	fbSupplySwitch 	: ifmIOcommon.SupplySwitch; // Function Block to turn ON/OFF latching switch on VBB15 supply (from ignition)
+	uiCurrSupplyVolt	: UINT ;    // Operating Voltage in mV
+	TOF_0: TOF;
+	Test: BOOL;
+	dude: BOOL;
+	fbenable: TON;
+	xResult : BOOL;
+	xTimerDone : BOOL;
+END_VAR
+
+(* Network 1 *)
+dude───> TRUE
