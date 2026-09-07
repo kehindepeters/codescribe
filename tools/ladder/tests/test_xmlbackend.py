@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 
 import plcopen  # noqa: E402
 import xmlbackend  # noqa: E402
+from render import write  # noqa: E402
 
 FIXTURES = os.path.join(HERE, "fixtures")
 CODESYS = os.path.join(FIXTURES, "codesys")
@@ -31,9 +32,12 @@ failures = []
 def check(name, condition, detail=""):
     if condition:
         print("OK      " + name)
-    else:
-        failures.append(name)
-        print("FAIL    " + name + ((": " + detail) if detail else ""))
+        return
+    failures.append(name)
+    # See test_fbd: a detail quoting rendered lines cannot go through print()
+    # on a Windows console without aborting the run.
+    sys.stdout.flush()
+    write(["FAIL    " + name + ((": " + detail) if detail else "")])
 
 
 def check_equal(name, actual, expected):

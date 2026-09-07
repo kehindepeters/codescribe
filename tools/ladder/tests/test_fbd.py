@@ -52,9 +52,15 @@ failures = []
 def check(name, condition, detail=""):
     if condition:
         print("OK      " + name)
-    else:
-        failures.append(name)
-        print("FAIL    " + name + ((": " + detail) if detail else ""))
+        return
+    failures.append(name)
+    # The detail quotes rendered lines, which hold box-drawing characters a
+    # Windows console cannot encode. print() raises UnicodeEncodeError on
+    # exactly those, which aborts the run at the first golden mismatch - so
+    # the failures after it are never reported and the suite looks shorter
+    # than it is rather than looking broken.
+    sys.stdout.flush()
+    write(["FAIL    " + name + ((": " + detail) if detail else "")])
 
 
 def check_equal(name, actual, expected):
@@ -160,7 +166,12 @@ check_equal("function block title includes it", tof.title, "TOF_0 : TOF")
 art = fbd_render.render_pou(pou)
 check("art: no trailing whitespace", all(line == line.rstrip() for line in art))
 check("art: boxes do not fuse together", not any(U["TR"] + U["TL"] in line for line in art))
-check("art: output assignment is drawn", any("uiOutVoltage => uiCurrSupplyVolt" in line for line in art))
+# The store hangs off its pin on a wire, outside the box. Written inside, the
+# target variable sat among the pin names where it read as another pin.
+check(
+    "art: output assignment hangs off the pin",
+    any("uiOutVoltage" + U["PIN_R"] + "---> uiCurrSupplyVolt".replace("---", U["H"] * 3) in line for line in art),
+)
 check("art: nested operator box is drawn", any(U["PIN_L"] + "In1   Out1" + U["PIN_R"] in line for line in art))
 
 # A tee marks a real connection, so an unconsumed output must leave the wall
@@ -289,7 +300,10 @@ check("fidelity: negated input pin reaches the diagram", any("NOT" in line and "
 # The same bubble on an output pin carrying an inline assignment: the stored
 # value is the inverse of the pin.
 check("fidelity: negated output pin inverts its assignment", any("xIdle := NOT tmr.Q;" in line for line in fid_st))
-check("fidelity: negated output pin is marked in the diagram", any("Q =o> xIdle" in line for line in fid_art))
+check(
+    "fidelity: negated output pin is marked in the diagram",
+    any("Q" + U["PIN_R"] + U["H"] * 3 + "o> xIdle" in line for line in fid_art),
+)
 
 # NOT binds tighter than OR in IEC 61131-3, so a negated compound expression
 # must keep its parentheses or the logic regroups.
@@ -395,11 +409,17 @@ check_equal("shared box: one network", len(shared.networks), 1)
 check_equal("shared box: two outputs", len(shared.networks[0].outputs), 2)
 check_equal("shared box: the timer is called once", len([l for l in shared_st if l.startswith("fbTimer(")]), 1)
 check_equal("shared box: one box is drawn", len([l for l in shared_art if "fbTimer : TON" in l]), 1)
-check("shared box: the second reader names the pin", any(l.startswith("fbTimer.Q") for l in shared_art))
 check("shared box: both stores are still made", "xDone := fbTimer.Q;" in shared_st and "xAny := fbTimer.Q OR xManual;" in shared_st)
 
+# The second reader hangs off the pin on a junction, not on a copy of the box
+# and not on its name in text: the wire is what says the two readers are the
+# same signal.
+check("shared box: the pin branches", any(U["T_DOWN"] in l and "xDone" in l for l in shared_art))
+check("shared box: the branch reaches the operator", any(U["BL"] in l and "In1" in l for l in shared_art))
+check("shared box: the box is not named in text", not any("fbTimer.Q" in l for l in shared_art))
+
 # An operator has no instance name to refer to, and being stateless it costs
-# nothing to draw again - so it is not collapsed.
+# nothing to draw again - so it is never the box a network is joined around.
 check("shared box: the operator is still drawn", any("Out1" in l for l in shared_art))
 
 
@@ -446,7 +466,10 @@ check("reset: the arrow is marked", any("(R)> xLatched" in line for line in stor
 
 check_equal("output pin store: recorded on the box", box(storage_pou.networks[1].outputs[0]).stored_outputs["Q"], "set")
 check("output pin store: the ST guards the write", "IF tmr.Q THEN xHeld := TRUE; END_IF" in storage_st)
-check("output pin store: the pin arrow is marked", any("Q =S> xHeld" in line for line in storage_art))
+check(
+    "output pin store: the pin arrow is marked",
+    any("Q" + U["PIN_R"] + U["H"] * 3 + "(S)> xHeld" in line for line in storage_art),
+)
 
 # str.center splits an odd remainder on opposite sides under CPython 3 and
 # IronPython 2.7, so a box title needing odd padding came out one column
@@ -455,9 +478,12 @@ check("output pin store: the pin arrow is marked", any("Q =S> xHeld" in line for
 check_equal("centred: the odd space goes right", layout.centred("ab", 5), " ab  ")
 check_equal("centred: an even split is unchanged", layout.centred("ab", 6), "  ab  ")
 check_equal("centred: no room to centre in", layout.centred("abcd", 3), "abcd")
+# The box is 15 columns wide for a 10-character title, so the margin and the
+# width are both odd - the one case where CPython puts the extra space on the
+# other side from IronPython. Both must produce this line.
 check(
     "centred: a title with odd padding sits where CODESYS puts it",
-    "          pulse : TP" in storage_art,
+    "             pulse : TP" in storage_art,
 )
 
 

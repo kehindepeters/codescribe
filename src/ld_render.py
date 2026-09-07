@@ -110,7 +110,7 @@ def _symbol_and_label(element):
 
 
 def _pin_arrow(box, pin):
-    """The arrow for an assignment written straight onto an output pin.
+    """The inline form, for a store on the pin the rung's wire leaves by.
 
     "=o>" is "=>" with the negation bubble: the pin stores its inverse. "=S>"
     and "=R>" are the set and reset a pin can carry, exactly as a coil does.
@@ -121,6 +121,20 @@ def _pin_arrow(box, pin):
     if storage == "reset":
         return " =R> "
     return " =o> " if pin in box.negated_outputs else " => "
+
+
+def _pin_head(box, pin):
+    """The arrow head on a store hung off an output pin on its own wire.
+
+    The same heads a coil carries: "o>" for the negation bubble, "(S)>" and
+    "(R)>" for a set and a reset.
+    """
+    storage = box.stored_outputs.get(pin)
+    if storage == "set":
+        return "(S)> "
+    if storage == "reset":
+        return "(R)> "
+    return "o> " if pin in box.negated_outputs else "> "
 
 
 def _render_block(element):
@@ -142,22 +156,35 @@ def _render_block(element):
         left.append(text)
         wired.append(label is None)
 
+    # A store written on an output pin hangs off that pin on a wire of its
+    # own, as CODESYS draws it. Writing it inside the box put the target
+    # variable in among the pin names, where it reads as another pin.
     right = []
-    for pin, assigned in element.output_pins:
+    tails = []
+    for index, pin_and_assignment in enumerate(element.output_pins):
+        pin, assigned = pin_and_assignment
         text = pin or "?"
         wired_out = element.output_wired and pin == element.active_output
-        if assigned:
+        tail = ""
+        if assigned and index > 0:
+            # Hung off the pin, as CODESYS draws it. Only below the first row:
+            # that one carries the rung's own wire onward to the rail, and a
+            # store sharing it would read as the rung running through it.
+            tail = chars["H"] * 3 + _pin_head(element, pin) + assigned
+        elif assigned:
             text += _pin_arrow(element, pin) + assigned
         elif pin in element.negated_outputs and not wired_out:
             # A wired pin draws its bubble on the box edge instead - one
             # bubble, not two.
             text += " o"
         right.append(text)
+        tails.append(tail)
 
     rows = max(len(left), len(right), 1)
     left += [""] * (rows - len(left))
     wired += [False] * (rows - len(wired))
     right += [""] * (rows - len(right))
+    tails += [""] * (rows - len(tails))
 
     title = element.title
     inner = max([len(title)] + [len(left[i]) + 3 + len(right[i]) for i in range(rows)])
@@ -174,11 +201,13 @@ def _render_block(element):
         elif wired[index] and element.power_negated:
             # The negation bubble on the power pin, drawn on the box wall.
             left_edge = "o"
-        # Only the active output continues onward, and only if consumed.
-        right_edge = chars["PIN_R"] if (index == 0 and element.output_wired) else chars["V"]
-        if index == 0 and element.output_wired and element.active_output in element.negated_outputs:
+        # Only the active output continues onward, and only if consumed - but
+        # a pin with a store on it breaks the wall for that wire too.
+        onward = index == 0 and element.output_wired
+        right_edge = chars["PIN_R"] if (onward or tails[index]) else chars["V"]
+        if onward and element.active_output in element.negated_outputs:
             right_edge = "o"
-        lines.append(left_edge + left[index] + " " * gap + right[index] + right_edge)
+        lines.append(left_edge + left[index] + " " * gap + right[index] + right_edge + tails[index])
     lines.append(chars["BL"] + chars["H"] * inner + chars["BR"])
 
     # Row 0 is the title and row 1 the top border, so the first pin is row 2.
@@ -221,7 +250,10 @@ def _render_series(items):
         width = block.width
         above = connect_row - block.connect_row
         lines = [" " * width] * above
-        lines += [line.ljust(width) for line in block.lines]
+        # The wire row is padded with wire, not spaces: a box with a store
+        # hanging off a lower pin is wider than its own wire row, and padding
+        # that with spaces broke the rung in half.
+        lines += block.padded(width)
         lines += [" " * width] * (height - len(lines))
         columns.append(lines)
 

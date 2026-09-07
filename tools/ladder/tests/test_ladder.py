@@ -36,9 +36,15 @@ failures = []
 def check(name, condition, detail=""):
     if condition:
         print("OK      " + name)
-    else:
-        failures.append(name)
-        print("FAIL    " + name + ((": " + detail) if detail else ""))
+        return
+    failures.append(name)
+    # The detail quotes rendered lines, which hold box-drawing characters a
+    # Windows console cannot encode. print() raises UnicodeEncodeError on
+    # exactly those, which aborts the run at the first golden mismatch - so
+    # the failures after it are never reported and the suite looks shorter
+    # than it is rather than looking broken.
+    sys.stdout.flush()
+    write(["FAIL    " + name + ((": " + detail) if detail else "")])
 
 
 def check_equal(name, actual, expected):
@@ -214,7 +220,12 @@ check("fidelity: negated pin keeps its NOT in the box", any("RESET := NOT xManua
 # An assignment on a block output pin executes every scan; the diagram drew it
 # but the ST - the half reviewers are told to trust - left it out.
 check("fidelity: output pin assignment reaches ST", any("iCount := ctr.CV;" in line for line in fidelity_st))
-check("fidelity: output pin assignment is drawn", any("CV => iCount" in line for line in fidelity_art))
+# A store below the first row hangs off its pin outside the box. The first
+# row carries the rung's own wire onward, so a store there stays inline.
+check(
+    "fidelity: output pin assignment hangs off the pin",
+    any("CV" + U["PIN_R"] + U["H"] * 3 + "> iCount" in line for line in fidelity_art),
+)
 
 # A rung can store through an outVariable element instead of a coil - the
 # standard shape for a non-boolean result. It emitted no ST at all, and a

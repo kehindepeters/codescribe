@@ -20,9 +20,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.join(HERE, "..", "..", "..")
 sys.path.insert(0, os.path.join(REPO, "src"))
 sys.path.insert(0, os.path.join(REPO, "tools", "ci"))  # stubbed scriptengine
+sys.path.insert(0, os.path.join(REPO, "tools", "ladder"))
 
 import graphical_export  # noqa: E402
 import import_from_files  # noqa: E402
+from render import write  # noqa: E402
 
 FIXTURES = os.path.join(HERE, "fixtures", "codesys")
 
@@ -32,9 +34,15 @@ failures = []
 def check(name, condition, detail=""):
     if condition:
         print("OK      " + name)
-    else:
-        failures.append(name)
-        print("FAIL    " + name + ((": " + detail) if detail else ""))
+        return
+    failures.append(name)
+    # The detail quotes rendered lines, which hold box-drawing characters a
+    # Windows console cannot encode. print() raises UnicodeEncodeError on
+    # exactly those, which aborts the run at the first golden mismatch - so
+    # the failures after it are never reported and the suite looks shorter
+    # than it is rather than looking broken.
+    sys.stdout.flush()
+    write(["FAIL    " + name + ((": " + detail) if detail else "")])
 
 
 def check_equal(name, actual, expected):

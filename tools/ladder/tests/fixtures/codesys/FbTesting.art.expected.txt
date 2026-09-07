@@ -15,7 +15,7 @@ END_VAR
 ifmIOcommon.SYS_VOLTAGE_CHANNEL.VBB15──────┤eChannel                           xError│
 ifmIOcommon.MODE_SYSTEM_SUPPLY.SYS_SUPPLY──┤eMode                           eDiagInfo│
                                            │eFilter                         xPrepared│
-                                           │         uiOutVoltage => uiCurrSupplyVolt│
+                                           │                             uiOutVoltage├───> uiCurrSupplyVolt
                                            └─────────────────────────────────────────┘
 
 (* Network 2: Safely power off PLC when ignition (VBB15) is lower than 5V for more than 10s. Enable timer on falling edge *)

@@ -23,12 +23,12 @@ def _render_label(node):
     return Block(["(* label: " + node.name + " *)"], 0)
 
 
-def _render_jump(node, drawn):
+def _render_jump(node, drawn, subs=None):
     chars = charset.active()
     tail = chars["H"] * 3 + ">> " + (node.target or "?")
     if node.condition is None:
         return Block([tail], 0)
-    source = _render(node.condition, drawn)
+    source = _render(node.condition, drawn, subs)
     lines = source.padded(source.width)
     out = []
     for index, line in enumerate(lines):
@@ -50,9 +50,9 @@ def _store_head(node):
     return "o> " if node.negated else "> "
 
 
-def _render_assign(node, drawn):
+def _render_assign(node, drawn, subs=None):
     chars = charset.active()
-    source = _render(node.source, drawn) if node.source is not None else Block([""], 0)
+    source = _render(node.source, drawn, subs) if node.source is not None else Block([""], 0)
     lines = source.padded(source.width)
     head = _store_head(node)
     tail = chars["H"] * 3 + head + (node.label or "?")
@@ -63,17 +63,27 @@ def _render_assign(node, drawn):
 
 
 def _pin_arrow(box, pin):
-    """The arrow for an assignment written straight onto an output pin.
-
-    "=o>" is "=>" with the negation bubble: the pin stores its inverse. "=S>"
-    and "=R>" are the set and reset a pin can carry, exactly as a coil does.
-    """
+    """The inline form, for a store on a pin that also feeds a wire onward."""
     storage = box.stored_outputs.get(pin)
     if storage == "set":
         return " =S> "
     if storage == "reset":
         return " =R> "
     return " =o> " if pin in box.negated_outputs else " => "
+
+
+def _pin_head(box, pin):
+    """The arrow head on a store written straight onto an output pin.
+
+    The same heads a store on a wire uses: "o>" for the negation bubble,
+    "(S)>" and "(R)>" for the set and reset a pin can carry.
+    """
+    storage = box.stored_outputs.get(pin)
+    if storage == "set":
+        return "(S)> "
+    if storage == "reset":
+        return "(R)> "
+    return "o> " if pin in box.negated_outputs else "> "
 
 
 def _is_wired(source):
@@ -87,11 +97,11 @@ def _is_wired(source):
     return not (isinstance(source, Signal) and not source.label)
 
 
-def _render_call(call, read_pin, drawn):
+def _render_call(call, read_pin, drawn, subs=None):
     chars = charset.active()
     input_blocks = []
     for _pin, source in call.inputs:
-        input_blocks.append(_render(source, drawn) if source is not None else Block([""], 0))
+        input_blocks.append(_render(source, drawn, subs) if source is not None else Block([""], 0))
 
     left_lines, pin_rows = stack(input_blocks)
     # A minimum lead-in, so a source exactly as wide as the column still shows
@@ -137,11 +147,19 @@ def _render_call(call, read_pin, drawn):
     for index, pin_and_source in enumerate(call.inputs):
         in_at[input_rows[index]] = pin_and_source[0] or "?"
 
+    # A store written on an output pin hangs off that pin on a wire of its
+    # own, the way CODESYS draws it. Writing it inside the box put the target
+    # variable in among the pin names, where it reads as another pin.
     out_at = {}
+    tail_at = {}
     for index, pin_and_assignment in enumerate(call.outputs):
         pin, assigned = pin_and_assignment
         text = pin or "?"
-        if assigned:
+        if assigned and pin not in call.wired_outputs:
+            tail_at[output_rows[index]] = chars["H"] * 3 + _pin_head(call, pin) + assigned
+        elif assigned:
+            # The pin already carries a wire onward; a second thing hung off
+            # the same row would cross it.
             text += _pin_arrow(call, pin) + assigned
         elif pin in call.negated_outputs:
             text += " o"
@@ -183,9 +201,10 @@ def _render_call(call, read_pin, drawn):
             left_pin = in_at.get(row, "")
             right_pin = out_at.get(row, "")
             left_edge = chars["PIN_L"] if row in handoff_pins else chars["V"]
-            right_edge = chars["PIN_R"] if row in live_output_rows else chars["V"]
+            wired_out = row in live_output_rows or row in tail_at
+            right_edge = chars["PIN_R"] if wired_out else chars["V"]
             gap = inner - len(left_pin) - len(right_pin)
-            box = left_edge + left_pin + " " * gap + right_pin + right_edge
+            box = left_edge + left_pin + " " * gap + right_pin + right_edge + tail_at.get(row, "")
         else:
             box = " " * (inner + 2)
         lines.append(left[row] + box)
@@ -219,7 +238,14 @@ def _reference(call, pin):
     return text
 
 
-def _render(node, drawn):
+# Stands in for a shared box while the branch that reads it is drawn, so the
+# row the wire arrives on can be found once the branch has been composed.
+# Composition is text, so a marker in the text is the cheapest way to carry a
+# position through it, and it never survives into the output.
+MARKER = chr(1)
+
+
+def _render(node, drawn, subs=None):
     """Draw one tree. ``drawn`` holds the boxes this network has already shown.
 
     A block read by two of the network's outputs is one block that runs once.
@@ -232,6 +258,10 @@ def _render(node, drawn):
     """
     call = node.call if isinstance(node, OutputRef) else node
     if isinstance(call, Call):
+        if subs is not None and id(call) in subs:
+            # Drawn once already, on the left of this branch; the wire into it
+            # comes from the junction rather than from another copy of the box.
+            return Block([MARKER], 0)
         pin = node.pin if isinstance(node, OutputRef) else call.active_output
         if id(call) in drawn:
             reference = _reference(call, pin)
@@ -239,11 +269,11 @@ def _render(node, drawn):
                 return Block([reference], 0)
         else:
             drawn.add(id(call))
-        return _render_call(call, pin, drawn)
+        return _render_call(call, pin, drawn, subs)
     if isinstance(node, Assign):
-        return _render_assign(node, drawn)
+        return _render_assign(node, drawn, subs)
     if isinstance(node, Jump):
-        return _render_jump(node, drawn)
+        return _render_jump(node, drawn, subs)
     if isinstance(node, Label):
         return _render_label(node)
     if isinstance(node, Signal):
@@ -355,6 +385,168 @@ def _shared_source(outputs):
     return sources[0] if all(box is boxes[0] for box in boxes) else None
 
 
+def _shared_call(outputs):
+    """The one box this network reads from more than one place, or None.
+
+    A box read twice is one box that runs once, and the second reader is a
+    branch off its pin - not a second copy, and not a name in text. Only an
+    instance qualifies: an operator has no name, no state, and nothing is
+    gained by joining two copies of it.
+
+    More than one shared box in a network needs a real two-dimensional
+    layout, which this renderer does not have; those fall back to naming the
+    box, which is wrong-looking but never wrong.
+    """
+    counts = {}
+    order = []
+
+    def walk(node):
+        call = node.call if isinstance(node, OutputRef) else node
+        if isinstance(call, Call):
+            if id(call) in counts:
+                counts[id(call)] += 1
+                return
+            counts[id(call)] = 1
+            order.append(call)
+            for _pin, source in call.inputs:
+                if source is not None:
+                    walk(source)
+        elif isinstance(node, Assign):
+            if node.source is not None:
+                walk(node.source)
+        elif isinstance(node, Jump):
+            if node.condition is not None:
+                walk(node.condition)
+
+    for tree in outputs:
+        walk(tree)
+
+    shared = [call for call in order if counts[id(call)] > 1 and call.instance_name]
+    return shared[0] if len(shared) == 1 else None
+
+
+def _entry_row(block):
+    """The row a substituted box's wire arrives on, with the marker removed."""
+    chars = charset.active()
+    for row, line in enumerate(block.lines):
+        if MARKER in line:
+            block.lines[row] = line.replace(MARKER, chars["H"])
+            return row
+    return None
+
+
+def _reads_pin(tree, call):
+    """The pin a tree reads ``call`` through, or None if it does not read it."""
+    found = []
+
+    def walk(node):
+        if isinstance(node, OutputRef) and node.call is call:
+            found.append(node.pin)
+            return
+        inner = node.call if isinstance(node, OutputRef) else node
+        if isinstance(inner, Call):
+            for _pin, source in inner.inputs:
+                if source is not None:
+                    walk(source)
+        elif isinstance(node, Assign):
+            if node.source is not None:
+                walk(node.source)
+        elif isinstance(node, Jump):
+            if node.condition is not None:
+                walk(node.condition)
+
+    walk(tree)
+    return found[0] if found else None
+
+
+def _render_joined(network, call):
+    """Draw a shared box once and branch its readers off the pin they read.
+
+    The box goes on the left; each reader is composed on its own to the right
+    of it and hangs off a junction column, level with the row its wire leaves
+    the box on. Readers of the same pin share the column, which is what the
+    editor draws.
+    """
+    chars = charset.active()
+    outputs = list(network.outputs)
+
+    drawn = set([id(call)])
+    subs = {id(call): call}
+
+    branches = []
+    for tree in outputs:
+        pin = _reads_pin(tree, call)
+        block = _render(tree, drawn, subs if pin is not None else None)
+        branches.append((block, _entry_row(block) if pin is not None else None, pin))
+
+    source = _render_call(call, None, set())
+    pin_rows = source.pin_rows
+
+    # Place each branch: the first at the row of the pin it reads, the rest
+    # stacked below whatever came before, so no two branches overlap.
+    placed = []
+    next_top = None
+    for block, entry, pin in branches:
+        if entry is None:
+            # Reads nothing from the shared box - it is its own drawing, and
+            # goes below everything rather than joining the column.
+            top = 0 if next_top is None else next_top
+        elif next_top is None:
+            top = pin_rows.get(pin, source.connect_row) - entry
+        else:
+            top = next_top
+        placed.append((block, entry, top))
+        next_top = top + len(block.lines)
+
+    shift = -min([top for _block, _entry, top in placed] + [0])
+    lines = [" " * source.width] * shift + list(source.lines)
+    placed = [(block, entry, top + shift) for block, entry, top in placed]
+
+    joins = sorted(top + entry for _block, entry, top in placed if entry is not None)
+    # The wire leaves the box once per pin that is read; everything below that
+    # is carried by the junction column, so only a pin's own row is filled
+    # across to it. Filling every join row drew a wire out of the box's
+    # bottom border.
+    leaves = set()
+    for index, entry_and_top in enumerate(placed):
+        _block, entry, top = entry_and_top
+        if entry is None:
+            continue
+        pin = branches[index][2]
+        leaves.add(pin_rows.get(pin, source.connect_row) + shift)
+
+    height = max([len(lines)] + [top + len(block.lines) for block, _entry, top in placed])
+
+    width = source.width + 2
+    body = []
+    for row in range(height):
+        line = lines[row] if row < len(lines) else ""
+        fill = chars["H"] if row in leaves else " "
+        body.append(line + fill * (width - len(line)))
+
+    # The junction column, and then each branch on its own rows.
+    out = []
+    for row in range(height):
+        if joins and row == joins[0] and len(joins) > 1:
+            joint = chars["T_DOWN"]
+        elif joins and row == joins[-1] and len(joins) > 1:
+            joint = chars["BL"]
+        elif row in joins:
+            joint = chars["T_RIGHT"] if len(joins) > 1 else chars["H"]
+        elif joins and joins[0] < row < joins[-1]:
+            joint = chars["V"]
+        else:
+            joint = " "
+        tail = ""
+        for block, _entry, top in placed:
+            if top <= row < top + len(block.lines):
+                tail = block.lines[row - top]
+                break
+        out.append((body[row] + joint + tail).rstrip())
+
+    return Block(out, joins[0] if joins else 0)
+
+
 def render_network(network):
     """Render one network, which may drive several outputs from one source."""
     outputs = getattr(network, "outputs", [network])
@@ -364,6 +556,10 @@ def render_network(network):
 
     if _shared_source(outputs) is not None:
         return _render_fanout(outputs, drawn).lines
+
+    shared = _shared_call(outputs)
+    if shared is not None:
+        return _render_joined(network, shared).lines
 
     lines = []
     for tree in outputs:

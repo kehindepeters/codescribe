@@ -87,6 +87,11 @@
               <connectionPointOut/>
               <expression>xGo</expression>
             </inVariable>
+            <inVariable localId="22">
+              <position x="0" y="0"/>
+              <connectionPointOut/>
+              <expression>xEnableIn</expression>
+            </inVariable>
             <block localId="21" typeName="TP" instanceName="pulse">
               <position x="0" y="0"/>
               <inputVariables>
@@ -95,6 +100,9 @@
                 </variable>
                 <variable formalParameter="PT">
                   <connectionPointIn/>
+                </variable>
+                <variable formalParameter="ENABLEIN">
+                  <connectionPointIn><connection refLocalId="22"/></connectionPointIn>
                 </variable>
               </inputVariables>
               <inOutVariables/>
