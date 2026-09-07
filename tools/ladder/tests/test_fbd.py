@@ -112,14 +112,14 @@ check_equal(
 )
 
 # A title is a second field, and can break the block comment just as a
-# comment can.
+# comment can. With no comment beside it, the title is the heading.
 hostile_title = "one *) two"
 check_equal(
     "network titles cannot break generated block comments",
     fbd_render.render_pou(
         Pou("HOSTILE", "program", networks=[Network("", [Signal("x")], title=hostile_title)])
-    )[3],
-    "(* title: one * ) two *)",
+    )[2],
+    "(* Network 1: one * ) two *)",
 )
 
 check("network 1 is a call", isinstance(tree1, Call))
@@ -524,17 +524,19 @@ check_equal("comment-only: the second keeps its own", comment_only.networks[1].c
 check_equal(
     "comment-only: the numbering follows the editor",
     [line for line in comment_only_art if line.startswith("(* Network")],
-    [
-        "(* Network 1: Section header: E-STOP CHAIN (documentation-only network) *)",
-        "(* Network 2: second network comment *)",
-    ],
+    ["(* Network 1: Title of network one *)", "(* Network 2: Title of network two *)"],
 )
 
 # The title is a second field CODESYS draws above the comment, and can be the
 # only description a network has. It was skipped with the rest of the
-# vendorElements.
+# vendorElements. It heads the network, so it goes on the number line and the
+# comment follows it, in the order the editor shows them.
 check_equal("comment-only: titles are read", comment_only.networks[0].title, "Title of network one")
-check("comment-only: titles are rendered", "(* title: Title of network one *)" in comment_only_art)
+check_equal(
+    "comment-only: the title heads the network and the comment follows",
+    comment_only_art[comment_only_art.index("(* Network 1: Title of network one *)") + 1],
+    "(* Section header: E-STOP CHAIN (documentation-only network) *)",
+)
 
 
 # --- language dispatch -----------------------------------------------------

@@ -96,7 +96,7 @@ A graphical action, transition or method is rendered from its own body, not from
 
 SFC and CFC POUs are not yet rendered; they export as native xml alone.
 
-Networks are numbered as CODESYS numbers them, so a network in the file lines up with the one in the editor.
+Networks are numbered as CODESYS numbers them, so a network in the file lines up with the one in the editor. Each is headed by its title, as the editor heads it, with the network's comment on the line below; a network with no title puts its comment on the number line instead.
 
 To render an exported PLCopen file by hand, to get plain ASCII instead of box drawing, or to see the equivalent Structured Text (which the export does not write, since showing each network twice in two notations reads worse than showing it once):
 

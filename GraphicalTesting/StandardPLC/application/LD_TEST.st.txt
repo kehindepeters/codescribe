@@ -14,15 +14,15 @@ VAR
 	PowerOff: BOOL;
 END_VAR
 
-(* Network 1: comment without backslash *)
-(* title: Try me Codesys I swear *)
+(* Network 1: Try me Codesys I swear *)
+(* comment without backslash *)
 IF (Sensor1 OR sensor3) AND NOT Sensor2 THEN PowerOn := TRUE; END_IF
 
 (* Network 2 *)
 (* JMP TestJump *)
 
-(* Network 3: Comment *)
-(* title: header text *)
+(* Network 3: header text *)
+(* Comment *)
 TON_0(IN := PowerOn, PT := T#5S);
 CTU_0(CU := TON_0.Q, RESET := PowerOff, PV := 10);
 IF CTU_0.Q THEN PowerOff := FALSE; END_IF

@@ -9,8 +9,8 @@ VAR
 	PowerOff: BOOL;
 END_VAR
 
-(* Network 1: comment without backslash *)
-(* title: Try me Codesys I swear *)
+(* Network 1: Try me Codesys I swear *)
+(* comment without backslash *)
 │    Sensor1   Sensor2  PowerOn
 ├──┬───┤ ├───┬───┤/├──────(S)─────┤
 │  │ sensor3 │
@@ -20,8 +20,8 @@ END_VAR
 │
 ├────>>TestJump────┤
 
-(* Network 3: Comment *)
-(* title: header text *)
+(* Network 3: header text *)
+(* Comment *)
 │               TON_0 : TON           CTU_0 : CTU
 │   PowerOn  ┌───────────────┐  ┌──────────────────────┐  PowerOff
 ├─────┤ ├────┤IN            Q├──┤CU                   Q├────(R)──────┤

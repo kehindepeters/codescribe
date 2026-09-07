@@ -40,21 +40,25 @@ def _one_line(text):
 
 
 def network_headers(number, network):
-    """The header lines above one network: its number, comment and title.
+    """The header lines above one network: its number, title and comment.
 
-    CODESYS keeps a network's title separately from its comment and draws it
-    above one, so it gets a line of its own rather than being folded into the
-    comment - a network can carry either, both or neither, and the title is
-    often the only description there is.
+    CODESYS keeps a network's title separately from its comment and draws the
+    title above it, as the network's heading. So the title goes on the number
+    line and the comment below it, in the order the editor shows them. A
+    network with no title puts its comment on the number line instead, rather
+    than spending a line on an empty heading - most networks have one or the
+    other, not both.
     """
-    header = "(* Network " + str(number)
     comment = _one_line(network.comment or "").lstrip("/").strip()
-    if comment:
-        header += ": " + comment
-    lines = [header + " *)"]
     title = _one_line(getattr(network, "title", "") or "").lstrip("/").strip()
-    if title:
-        lines.append("(* title: " + title + " *)")
+
+    header = "(* Network " + str(number)
+    heading = title or comment
+    if heading:
+        header += ": " + heading
+    lines = [header + " *)"]
+    if title and comment:
+        lines.append("(* " + comment + " *)")
     return lines
 
 
