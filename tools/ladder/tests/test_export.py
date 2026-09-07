@@ -301,6 +301,84 @@ finally:
     shutil.rmtree(workspace)
 
 
+# --- sub-POU members render their own body, never the parent's --------------
+
+# An action's PLCopen export wraps it in its parent POU, parent body included.
+# Without the member name the rendering drew the parent's networks under the
+# action's filename - a dump describing a different POU than the .xml beside
+# it, which a reviewer has no way to notice.
+ACTION_FIXTURE = os.path.join(HERE, "fixtures", "action_member.plcopen.xml")
+METHOD_FIXTURE = os.path.join(HERE, "fixtures", "method_member.plcopen.xml")
+
+workspace = tempfile.mkdtemp()
+try:
+    graphical_export.reset_stats()
+
+    action_base = os.path.join(workspace, "PLC_TEST.ACT_TEST")
+    action = FakePou("ACT_TEST", ACTION_FIXTURE)
+    check(
+        "an action renders",
+        graphical_export.write_rendered_text(action, action_base, member_name="ACT_TEST") is True,
+    )
+    action_content = read(action_base + ".txt")
+    check("the action's own body is drawn", "Status.Action" in action_content)
+    check("the parent's body is not drawn", "Status.Parent" not in action_content)
+    check("the rendering is titled for the member", "PLC_TEST.ACT_TEST" in action_content)
+    check(
+        "the rendering says whose declaration it shows",
+        "the declaration below is the parent POU's" in action_content,
+    )
+
+    # Both derived files describe the member. An ST file showing the parent
+    # beside a diagram showing the action would be worse than either alone.
+    action_st = read(action_base + ".st.txt")
+    check("the ST file follows the member too", "Status.Action := xAction;" in action_st)
+    check("the ST file does not show the parent", "Status.Parent" not in action_st)
+    check("the ST file carries the member note", "the declaration below is the parent POU's" in action_st)
+
+    # A graphical method: CODESYS spells the tag <Method> with a capital M
+    # where it spells actions <action>. Matching one case only meant methods
+    # never found their own body and silently rendered nothing.
+    method_base = os.path.join(workspace, "FB_TEST.Compute")
+    method = FakePou("Compute", METHOD_FIXTURE)
+    check(
+        "a graphical method renders",
+        graphical_export.write_rendered_text(method, method_base, member_name="Compute") is True,
+    )
+    method_content = read(method_base + ".txt")
+    check("the method's own body is drawn", "Status.Method" in method_content)
+    check("the method does not draw the parent", "Status.Parent" not in method_content)
+
+    # The parent's own rendering must still be the parent body, members
+    # excluded - iter_bodies only ever took the pou's direct <body>.
+    parent_base = os.path.join(workspace, "PLC_TEST")
+    parent = FakePou("PLC_TEST", ACTION_FIXTURE)
+    check("the parent still renders", graphical_export.write_rendered_text(parent, parent_base) is True)
+    parent_content = read(parent_base + ".txt")
+    check("the parent draws its own body", "Status.Parent" in parent_content)
+    check("the parent does not absorb the action", "Status.Action" not in parent_content)
+    check(
+        "the parent's dump carries no member note",
+        "the declaration below is the parent POU's" not in parent_content,
+    )
+
+    # A member whose body the export does not carry must produce NO file: an
+    # absent rendering sends the reviewer to the native xml, a foreign one
+    # does not.
+    missing_base = os.path.join(workspace, "PLC_TEST.ACT_MISSING")
+    missing = FakePou("ACT_MISSING", os.path.join(FIXTURES, "LDTesting.xml"))
+    check(
+        "a member the export lacks writes nothing",
+        graphical_export.write_rendered_text(missing, missing_base, member_name="ACT_MISSING") is False,
+    )
+    check("no foreign dump is written", not os.path.exists(missing_base + ".txt"))
+    check("no foreign ST is written either", not os.path.exists(missing_base + ".st.txt"))
+    check_equal("the missing member is counted", graphical_export.STATS["members_missing"], 1)
+    check("the summary reports the missing member", "nothing was written for those" in graphical_export.summary())
+finally:
+    shutil.rmtree(workspace)
+
+
 # --- the importer ignores the derived file ---------------------------------
 
 # This is the contract that keeps the round trip intact. import_directory_child

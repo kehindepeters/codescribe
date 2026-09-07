@@ -67,6 +67,7 @@ EMPTY_STATS = {
     "st_seconds": 0.0,
     "verbatim_declarations": 0,
     "fallback_declarations": 0,
+    "members_missing": 0,
 }
 
 STATS = dict(EMPTY_STATS)
@@ -109,6 +110,13 @@ def summary():
             "fallback_declarations"
         ]
         line += " pragmas and attributes may be missing from those declarations."
+    # No file at all for a member is deliberate, but it is still a POU with no
+    # rendering beside its xml, so it has to be said rather than inferred.
+    if STATS["members_missing"]:
+        line += "\n         NOTE: %d action/transition/method export(s) did not carry the" % STATS[
+            "members_missing"
+        ]
+        line += " member's own body; nothing was written for those - review their native xml."
     return line
 
 
@@ -127,20 +135,38 @@ def _write_lines(path, lines):
         f.write(u"\n")
 
 
-def _render_pous(plcopen_path):
+def _render_pous(plcopen_path, member_name=None):
     """(pou, art_renderer) for every POU in the file we know how to draw.
 
     One pass over the document. Asking each language parser in turn would
     re-read and re-parse the whole file once per language, which is pure waste
     on a project with hundreds of POUs.
+
+    With a member_name, only that member's own body qualifies. The exported
+    file also carries the parent POU's body, and rendering that instead is
+    exactly the foreign-dump defect this parameter exists to prevent.
     """
     found = []
-    for pou_elem, language, body in plcopen.iter_bodies(plcopen_path):
+    if member_name is None:
+        bodies = plcopen.iter_bodies(plcopen_path)
+    else:
+        bodies = plcopen.iter_member_bodies(plcopen_path, member_name)
+    for pou_elem, language, body in bodies:
         entry = RENDERERS.get(language)
         if entry is None:
             continue
         parser, art_renderer = entry
-        found.append((parser.pou_from_body(pou_elem, body), art_renderer))
+        pou = parser.pou_from_body(pou_elem, body)
+        if member_name is not None:
+            lowered = pou.name.lower()
+            if lowered != member_name.lower() and not lowered.endswith("." + member_name.lower()):
+                # The body came from a member nested in the parent pou, whose
+                # name the parser picked up. Title the rendering for what it
+                # actually shows - and flag it, because the declaration in
+                # the export is the parent's and the rendering should say so.
+                pou.name = pou.name + "." + member_name
+                pou.member_of_parent = True
+        found.append((pou, art_renderer))
     return found
 
 
@@ -155,7 +181,7 @@ def _joined(blocks):
     return lines
 
 
-def render_plcopen(plcopen_path, declaration_text=None):
+def render_plcopen(plcopen_path, declaration_text=None, member_name=None):
     """(diagram lines, ST lines) for a PLCopen file. ([], []) if none apply.
 
     Two renderings of the same networks, for two files. They were written
@@ -168,25 +194,38 @@ def render_plcopen(plcopen_path, declaration_text=None):
 
     The ST is a rendering, not a translation. It is not guaranteed to compile
     and must never be fed back into CODESYS; the file says so at the top.
+
+    ``member_name`` restricts the rendering to that sub-POU member's own
+    body; see _render_pous.
     """
     started = time.time()
-    pous = _render_pous(plcopen_path)
+    pous = _render_pous(plcopen_path, member_name)
     if declaration_text is not None and pous:
         pous[0][0].declaration_text = declaration_text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
     STATS["parse_seconds"] += time.time() - started
 
+    # A member's export carries the parent's declaration, not its own, so
+    # both renderings have to open by saying whose declaration they show.
+    notes = []
+    for pou, _art_renderer in pous:
+        if getattr(pou, "member_of_parent", False):
+            notes.append([u"(* " + pou.name + u" - the declaration below is the parent POU's *)", u""])
+        else:
+            notes.append([])
+
     started = time.time()
     drawn = []
-    for pou, art_renderer in pous:
+    for index, entry in enumerate(pous):
+        pou, art_renderer = entry
         if pou.declaration_text:
             STATS["verbatim_declarations"] += 1
         else:
             STATS["fallback_declarations"] += 1
-        drawn.append(art_renderer.render_pou(pou))
+        drawn.append(notes[index] + art_renderer.render_pou(pou))
     STATS["draw_seconds"] += time.time() - started
 
     started = time.time()
-    text = [st_render.render_pou(pou) for pou, _art_renderer in pous]
+    text = [notes[index] + st_render.render_pou(pou) for index, (pou, _art) in enumerate(pous)]
     STATS["st_seconds"] += time.time() - started
 
     return _joined(drawn), _joined(text)
@@ -237,11 +276,19 @@ def _remove_quietly(path):
         pass
 
 
-def write_rendered_text(obj, base_path):
-    """Export obj as PLCopen xml, render it, and write <base_path>.txt.
+def write_rendered_text(obj, base_path, member_name=None):
+    """Export obj as PLCopen xml, render it, and write the derived files.
 
-    Returns True if a file was written. SFC and CFC bodies parse to nothing
-    renderable, so they are skipped rather than producing an empty file.
+    Returns True if files were written. SFC and CFC bodies parse to nothing
+    renderable, so they are skipped rather than producing empty files.
+
+    ``member_name`` marks obj as a sub-POU member (action, transition,
+    graphical method) whose PLCopen export wraps it in its *parent* POU.
+    Only the member's own body is rendered then - never the parent's, whose
+    networks under the member's filename would have a reviewer reading a
+    different POU. If the export carries no such body, nothing is written at
+    all: an absent rendering sends the reviewer to the native xml, a foreign
+    one does not.
 
     A rendering failure must not fail the export: the native xml has already
     been written and is complete and correct on its own. The problem is
@@ -266,8 +313,18 @@ def write_rendered_text(obj, base_path):
 
         # render_plcopen accounts for its own parse, draw and ST time.
         textual_declaration = getattr(getattr(obj, "textual_declaration", None), "text", None)
-        lines, st_lines = render_plcopen(temp_path, textual_declaration)
+        lines, st_lines = render_plcopen(temp_path, textual_declaration, member_name)
         if not lines:
+            if member_name is not None:
+                # No file at all is the honest outcome: an absent rendering
+                # sends the reviewer to the native xml, a foreign one does not.
+                STATS["members_missing"] += 1
+                print(
+                    "WARNING: the PLCopen export of "
+                    + obj.get_name()
+                    + " carries no renderable body for the member itself;"
+                    + " nothing written - review the native xml"
+                )
             STATS["skipped"] += 1
             return False
 

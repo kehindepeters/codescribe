@@ -92,6 +92,8 @@ The diagram shows the shape; the ST states the logic exactly, and says things a 
 
 It is **a rendering, not a translation**: it is not guaranteed to compile, it must never be imported or pasted back into CODESYS, and the file opens with a banner saying so. Like the `.txt`, `Import From Files` ignores it — the dispatch is on `.xml` and `.st`, and both derived files end in `.txt`.
 
+A graphical action, transition or method is rendered from its own body, not from the parent POU it is exported inside. PLCopen has no top-level element for one, so CODESYS exports the parent with the member nested in it, parent body included; the rendering picks the member out by name and says at the top whose declaration it is showing, because the export only carries the parent's. Where an export does not carry the member's body at all, no files are written for it and the export summary says so - an absent rendering sends you to the native xml, a rendering of the wrong POU does not.
+
 SFC and CFC POUs are not yet rendered; they export as native xml alone.
 
 Networks are numbered as CODESYS numbers them, so a network in the file lines up with the one in the editor.
