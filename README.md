@@ -66,13 +66,14 @@ Actions and Transitions export as `.st` with the kind encoded in the filename (`
 Ladder and Function Block Diagram POUs have no textual implementation, so they export as native xml that git can store but nobody can review. Alongside that xml, CODESCRIBE writes a `.txt` holding the declaration and a diagram of each network:
 
 ```
-(* Network 2 *)
-│               TON_0 : TON           CTU_0 : CTU
-│   PowerOn  ┌───────────────┐  ┌──────────────────────┐  PowerOff
-├─────┤ ├────┤IN            Q├──┤CU                   Q├────(R)──────┤
-│            │PT := T#5S   ET│  │RESET := PowerOff   CV│
-│            └───────────────┘  │PV := 10              │
-│                               └──────────────────────┘
+(* Network 2: header text *)
+(* Comment *)
+│                   TON_0 : TON              CTU_0 : CTU
+│   PowerOn        ┌───────────┐            ┌───────────┐  PowerOff
+├─────┤ ├──────────┤IN        Q├────────────┤CU        Q├────(R)──────┤
+│            T#5S──┤PT       ET│  PowerOff──┤RESET    CV│
+│                  └───────────┘  10────────┤PV         │
+│                                           └───────────┘
 ```
 
 The declaration is copied from the original CODESYS declaration source, preserving comments, pragmas, safety-qualified types, and literal spelling. The diagram is derived from PLCopen XML. On older CODESYS versions where the plaintext declaration is unavailable, the declaration is rebuilt from the structured interface and the export summary warns that comments, pragmas, or exact formatting may be missing.

@@ -31,7 +31,16 @@ ifmIOcommon.MODE_SYSTEM_SUPPLY.SYS_SUPPLY──┤eMode                         
                                            └─────────────────────────────────────────┘
 
 (* Network 2: Safely power off PLC when ignition (VBB15) is lower than 5V for more than 10s. Enable timer on falling edge *)
-(* out-commented in CODESYS - does not execute; diagram not exported, see the native xml *)
+                                                   fbSupplySwitch : ifmIOcommon.SupplySwitch
+                                                  ┌─────────────────────────────────────────┐
+ifmIOcommon.MODE_SUPPLY_SWITCH.SYS_SUPPLY_SWITCH──┤eMode                              xError│
+                       GT        TOF_0 : TOF      │                                         │
+                  ┌──────────┐  ┌───────────┐     │                                         │
+uiCurrSupplyVolt──┤In1   Out1├──┤IN        Q├─────┤xValue                          eDiagInfo│
+uiMinVoltage──────┤In2       │  │           │     │                                xPrepared│
+                  └──────────┘  │           │     └─────────────────────────────────────────┘
+T#5S────────────────────────────┤PT       ET│
+                                └───────────┘
 
 (* Network 3 *)
 (* label: ByeBye *)

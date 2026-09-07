@@ -159,15 +159,18 @@ def _render_block(element):
     """
     chars = charset.active()
 
+    # The value feeding a side pin is drawn to the left of the box, on a wire
+    # into the pin, the way the editor draws it and the way the FBD renderer
+    # already does. Written inside as "PT := T#5S" it reads as part of the pin
+    # name, and it widens the box by the length of every value in it.
     left = []
     wired = []
+    values = []
     for pin, label in element.input_pins:
-        text = pin or "?"
+        left.append(pin or "?")
         # A label of None is the power pin - it is wired, not parameterised.
-        if label is not None:
-            text += " := " + label if label else ""
-        left.append(text)
         wired.append(label is None)
+        values.append("" if label is None else (label or ""))
 
     # A store written on an output pin hangs off that pin on a wire of its
     # own, as CODESYS draws it. Writing it inside the box put the target
@@ -196,17 +199,35 @@ def _render_block(element):
     rows = max(len(left), len(right), 1)
     left += [""] * (rows - len(left))
     wired += [False] * (rows - len(wired))
+    values += [""] * (rows - len(values))
     right += [""] * (rows - len(right))
     tails += [""] * (rows - len(tails))
 
     title = element.title
     inner = max([len(title)] + [len(left[i]) + 3 + len(right[i]) for i in range(rows)])
 
-    lines = [centred(title, inner + 2)]
-    lines.append(chars["TL"] + chars["H"] * inner + chars["TR"])
+    # Two columns to the left of the box: the widest value, then a short wire
+    # into the pin. The power pin's row is all wire - the rung feeds that one.
+    lead = max([len(value) for value in values] + [0])
+    lead = lead + 2 if lead else 0
+
+    def feed(index):
+        if not lead:
+            return ""
+        if wired[index]:
+            return chars["H"] * lead
+        value = values[index]
+        if not value:
+            return " " * lead
+        return value + chars["H"] * (lead - len(value))
+
+    lines = [" " * lead + centred(title, inner + 2)]
+    lines.append(" " * lead + chars["TL"] + chars["H"] * inner + chars["TR"])
     for index in range(rows):
         gap = inner - len(left[index]) - len(right[index])
-        left_edge = chars["PIN_L"] if wired[index] else chars["V"]
+        # A pin fed from the left breaks the wall, whether the rung feeds it
+        # or a value does. A pin with nothing on it leaves the wall unbroken.
+        left_edge = chars["PIN_L"] if (wired[index] or values[index]) else chars["V"]
         if wired[index] and element.power_edge in EDGE_MARKER:
             # The P or N on the power pin, drawn on the box wall in the same
             # place the bubble goes and the same letter a contact carries.
@@ -220,8 +241,8 @@ def _render_block(element):
         right_edge = chars["PIN_R"] if (onward or tails[index]) else chars["V"]
         if onward and element.active_output in element.negated_outputs:
             right_edge = "o"
-        lines.append(left_edge + left[index] + " " * gap + right[index] + right_edge + tails[index])
-    lines.append(chars["BL"] + chars["H"] * inner + chars["BR"])
+        lines.append(feed(index) + left_edge + left[index] + " " * gap + right[index] + right_edge + tails[index])
+    lines.append(" " * lead + chars["BL"] + chars["H"] * inner + chars["BR"])
 
     # Row 0 is the title and row 1 the top border, so the first pin is row 2.
     connect_row = 2

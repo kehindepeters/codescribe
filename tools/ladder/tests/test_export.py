@@ -404,13 +404,20 @@ def native_of(pou_path):
     return native_networks.read_networks(pou_path)
 
 
-fb_native = native_of(os.path.join(EXPORT, "StandardPLC", "application", "FB_TESTING.xml"))
-check_equal("the native list has every network", len(fb_native), 9)
-check("the out-commented network is in it", fb_native[1].out_commented)
-check("and it keeps its comment", fb_native[1].comment.startswith("//Safely power off PLC"))
-check_equal("the label is on the network that owns it", fb_native[2].label, "ByeBye")
-check("an empty network is marked empty", fb_native[3].empty)
-check_equal("a comment-only network keeps its comment", fb_native[4].comment, "Comment only network")
+# Pinned to a fixture, not to the real project: a network switched back on in
+# CODESYS should not fail a test about reading flags.
+sample = native_of(os.path.join(HERE, "fixtures", "native_networks.xml"))
+check_equal("every network in the list is read", len(sample), 4)
+check("a network with a body is neither out-commented nor empty", sample[0].has_logic)
+check_equal("its title is read", sample[0].title, "Pulse counter")
+check_equal("its comment is read", sample[0].comment, "// counts the pulses")
+check("an out-commented network is marked", sample[1].out_commented)
+check("and it keeps the comment PLCopen throws away", sample[1].comment.startswith("// switched off"))
+check("an out-commented network has no body to match", not sample[1].has_logic)
+check("an empty network is marked empty", sample[2].empty)
+check_equal("the label is on the network that owns it", sample[2].label, "RETRY")
+check_equal("a comment-only network keeps its comment", sample[3].comment, "SECTION: shutdown")
+check_equal("only the network with a body takes part in the match", len([n for n in sample if n.has_logic]), 1)
 
 # The committed rendering is the worked example, so it has to agree with the
 # native list beside it - one numbered network per editor network, in order,
@@ -447,9 +454,18 @@ class FakeNetwork(object):
         self.outputs = outputs
 
 
-spare = [FakeNetwork(["logic"]) for _ in range(len([n for n in fb_native if n.has_logic]) + 1)]
-check("a body the native list cannot account for is refused", native_networks.align(fb_native, spare) is None)
+spare = [FakeNetwork(["logic"]) for _ in range(2)]
+check("a body the native list cannot account for is refused", native_networks.align(sample, spare) is None)
 check("and no native list at all is refused", native_networks.align(None, spare) is None)
+
+# The right number of bodies lines up, and the networks without one keep their
+# number and say why they have no diagram.
+aligned = native_networks.align(sample, [FakeNetwork(["logic"])])
+check_equal("one entry per network the editor shows", len(aligned), 4)
+check_equal("the body lands on the network that has one", aligned[0].outputs, ["logic"])
+check_equal("an out-commented network says it does not execute", aligned[1].note, native_networks.NOTE_OUT_COMMENTED)
+check_equal("an empty one says it is empty", aligned[2].note, native_networks.NOTE_EMPTY)
+check_equal("and carries its label", aligned[2].label, "RETRY")
 
 
 # --- the importer ignores the derived file ---------------------------------

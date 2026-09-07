@@ -22,12 +22,12 @@ END_VAR
 
 (* Network 3: header text *)
 (* Comment *)
-│               TON_0 : TON           CTU_0 : CTU
-│   PowerOn  ┌───────────────┐  ┌──────────────────────┐  PowerOff
-├─────┤ ├────┤IN            Q├──┤CU                   Q├────(R)──────┤
-│            │PT := T#5S   ET│  │RESET := PowerOff   CV│
-│            └───────────────┘  │PV := 10              │
-│                               └──────────────────────┘
+│                   TON_0 : TON              CTU_0 : CTU
+│   PowerOn        ┌───────────┐            ┌───────────┐  PowerOff
+├─────┤ ├──────────┤IN        Q├────────────┤CU        Q├────(R)──────┤
+│            T#5S──┤PT       ET│  PowerOff──┤RESET    CV│
+│                  └───────────┘  10────────┤PV         │
+│                                           └───────────┘
 
 (* Network 4 *)
 (* label: TestJump *)

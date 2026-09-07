@@ -215,7 +215,10 @@ check("fidelity: label reaches ST", any("(* label: SKIP *)" in line for line in 
 # model.Signal's docstring warns that dropping negated inverts the logic; the
 # LD block-pin path did exactly that.
 check("fidelity: negated pin keeps its NOT in ST", any("RESET := NOT xManual" in line for line in fidelity_st))
-check("fidelity: negated pin keeps its NOT in the box", any("RESET := NOT xManual" in line for line in fidelity_art))
+check(
+    "fidelity: negated pin keeps its NOT beside the box",
+    any("NOT xManual" + U["H"] * 2 + U["PIN_L"] + "RESET" in line for line in fidelity_art),
+)
 
 # An assignment on a block output pin executes every scan; the diagram drew it
 # but the ST - the half reviewers are told to trust - left it out.
@@ -242,7 +245,10 @@ check("fidelity: negated output pin is marked in the diagram", any("Q =o> xCool"
 # A negated output consumed through a SIDE PIN goes via expr_to_text, a
 # different path from the power flow - it must keep the NOT too.
 check("fidelity: negated output survives into a side pin", any("RESET := NOT tmrA.Q" in line for line in fidelity_st))
-check("fidelity: side pin caption matches the ST", any("RESET := NOT tmrA.Q" in line for line in fidelity_art))
+check(
+    "fidelity: the side pin names what the ST names",
+    any("NOT tmrA.Q" + U["H"] * 2 + U["PIN_L"] + "RESET" in line for line in fidelity_art),
+)
 
 # The chain feeding a box on a side pin is the BOX's input, not a term of the
 # pin's condition. Folding it in ("xB AND NOT tmrA.Q") says the counter also
@@ -270,7 +276,10 @@ side_pin_art = render_pou(side_pin_pou)
 check_equal("side pin: one rung", len(side_pin_pou.rungs), 1)
 check("side pin: the latch is called", any("latch(SET1 := xSet, RESET := xClear);" in line for line in side_pin_st))
 check("side pin: the pin reads only the latch output", any("RESET := latch.Q1" in line for line in side_pin_st))
-check("side pin: the caption matches the ST", any("RESET := latch.Q1" in line for line in side_pin_art))
+check(
+    "side pin: the pin names what the ST names",
+    any("latch.Q1" + U["H"] * 2 + U["PIN_L"] + "RESET" in line for line in side_pin_art),
+)
 check("side pin: the latch box is drawn", any("latch : SR" in line for line in side_pin_art))
 check("side pin: no chain folded into the pin", not any("xSet AND" in line for line in side_pin_st + side_pin_art))
 
@@ -303,6 +312,12 @@ check("two coils: the plain coil stores", "xOut1 := tmr.Q;" in two_coils_st)
 check("two coils: the set coil latches", "IF tmr.Q THEN xOut2 := TRUE; END_IF" in two_coils_st)
 check("two coils: the outVariable stores the other pin", "tElapsed := tmr.ET;" in two_coils_st)
 check("two coils: a later output names the box", any("[tmr.ET]" in line for line in two_coils_art))
+
+# A value feeding a side pin is drawn to the left of the box on a wire into
+# the pin, the way the editor draws it. Written inside as "PT := T#2S" it
+# reads as part of the pin name, and widens the box by every value in it.
+check("two coils: the pin value sits outside the box", any("T#2S" + U["H"] * 2 + U["PIN_L"] + "PT" in line for line in two_coils_art))
+check("two coils: no value is left inside a box", not any(" := " in line for line in two_coils_art))
 
 # The same shape in a real SP11 export: LDTesting with one coil added to its
 # first network.
