@@ -67,9 +67,28 @@ def _symbol_and_label(element):
     # unhandled logic is visible rather than silently dropped. A negated
     # variable spells its NOT out - there is no bubble to draw on a box.
     label = element.label or "?"
-    if element.negated:
+    if element.storage == "set":
+        # The same marker a set coil carries: this store holds until a reset.
+        label = "(S) " + label
+    elif element.storage == "reset":
+        label = "(R) " + label
+    elif element.negated:
         label = "NOT " + label
     return "[" + label + "]", ""
+
+
+def _pin_arrow(box, pin):
+    """The arrow for an assignment written straight onto an output pin.
+
+    "=o>" is "=>" with the negation bubble: the pin stores its inverse. "=S>"
+    and "=R>" are the set and reset a pin can carry, exactly as a coil does.
+    """
+    storage = box.stored_outputs.get(pin)
+    if storage == "set":
+        return " =S> "
+    if storage == "reset":
+        return " =R> "
+    return " =o> " if pin in box.negated_outputs else " => "
 
 
 def _render_block(element):
@@ -96,8 +115,7 @@ def _render_block(element):
         text = pin or "?"
         wired_out = element.output_wired and pin == element.active_output
         if assigned:
-            # =o> is => with the negation bubble: the pin stores its inverse.
-            text += (" =o> " if pin in element.negated_outputs else " => ") + assigned
+            text += _pin_arrow(element, pin) + assigned
         elif pin in element.negated_outputs and not wired_out:
             # A wired pin draws its bubble on the box edge instead - one
             # bubble, not two.

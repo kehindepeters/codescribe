@@ -86,6 +86,7 @@ class Node(object):
         outputs=None,
         st_code=None,
         negated_outputs=None,
+        stored_outputs=None,
     ):
         self.st_code = st_code if st_code is not None else []  # blocks only: inline ST
         self.local_id = local_id
@@ -101,6 +102,8 @@ class Node(object):
         # blocks only: output pins whose in-place negation bubble inverts the
         # value leaving them
         self.negated_outputs = negated_outputs if negated_outputs is not None else set()
+        # blocks only: {pin: "set" | "reset"} for inline assignments that store
+        self.stored_outputs = dict(stored_outputs) if stored_outputs is not None else {}
 
     def __repr__(self):
         return "Node(%s, %s, %r, inputs=%r)" % (self.local_id, self.kind, self.label, self.inputs)
@@ -246,6 +249,7 @@ class Call(object):
         wired_outputs=None,
         st_code=None,
         negated_outputs=None,
+        stored_outputs=None,
     ):
         self.type_name = type_name
         self.instance_name = instance_name
@@ -259,6 +263,9 @@ class Call(object):
         # Pins carrying CODESYS's in-place negation bubble: the value leaving
         # them is the inverse of the pin.
         self.negated_outputs = negated_outputs if negated_outputs is not None else set()
+        # {pin: "set" | "reset"} for inline assignments that store instead of
+        # assigning outright.
+        self.stored_outputs = dict(stored_outputs) if stored_outputs is not None else {}
         # An EXECUTE box carries inline ST as its whole body. Dropping it loses
         # the logic entirely while still drawing a plausible-looking box.
         self.st_code = st_code if st_code is not None else []
@@ -327,13 +334,17 @@ class Assign(object):
     that inverts the stored value.
     """
 
-    def __init__(self, label, source=None, negated=False):
+    def __init__(self, label, source=None, negated=False, storage=None):
         self.label = label
         self.source = source
         self.negated = negated
+        # "set" | "reset" | None. A stored value is held until something
+        # resets it; rendering one as a plain assignment says it clears as
+        # soon as its condition drops, which is the opposite of the program.
+        self.storage = storage
 
     def __repr__(self):
-        return "Assign(%r, negated=%r)" % (self.label, self.negated)
+        return "Assign(%r, negated=%r, storage=%r)" % (self.label, self.negated, self.storage)
 
 
 # --- expression tree -------------------------------------------------------
@@ -373,6 +384,7 @@ class Element(object):
         output_wired=False,
         power_negated=False,
         negated_outputs=None,
+        stored_outputs=None,
         pin_blocks=None,
     ):
         self.kind = kind
@@ -390,6 +402,9 @@ class Element(object):
         # logic in place if dropped.
         self.power_negated = power_negated
         self.negated_outputs = negated_outputs if negated_outputs is not None else set()
+        # {pin: "set" | "reset"} for inline assignments that store instead of
+        # assigning outright.
+        self.stored_outputs = dict(stored_outputs) if stored_outputs is not None else {}
         # True when something downstream actually consumes the active output,
         # so the renderer knows whether to break the box edge with a tee.
         self.output_wired = output_wired

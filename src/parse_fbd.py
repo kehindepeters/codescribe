@@ -8,6 +8,7 @@ rather than a series/parallel chain.
 
 from model import BLOCK, COMMENT, Assign, Call, Jump, Label, Network, Node, OutputRef, Pou, Signal, component_finder
 from plcopen import (
+    attr,
     block_connections,
     block_outputs,
     block_st_code,
@@ -20,6 +21,7 @@ from plcopen import (
     iter_bodies,
     negated_output_pins,
     parse_interface,
+    stored_output_pins,
     tag,
 )
 
@@ -75,12 +77,16 @@ def parse_fbd_body(body_elem):
             kind=kind,
             label=label,
             negated=is_true(child, "negated"),
+            # A store held until something resets it, on an outVariable
+            # exactly as on an LD coil.
+            storage=attr(child, "storage"),
             inputs=block_connections(child) if is_block else direct_connections(child),
             type_name=child.get("typeName") if is_block else None,
             instance_name=child.get("instanceName") if is_block else None,
             outputs=block_outputs(child) if is_block else None,
             st_code=block_st_code(child) if is_block else None,
             negated_outputs=negated_output_pins(child) if is_block else None,
+            stored_outputs=stored_output_pins(child) if is_block else None,
         )
         nodes.append(node)
     return nodes
@@ -148,6 +154,7 @@ def _build_node(node, by_id, visiting, memo):
             outputs=list(node.outputs),
             st_code=list(node.st_code),
             negated_outputs=set(node.negated_outputs),
+            stored_outputs=node.stored_outputs,
         )
 
     if node.kind in (OUT_VARIABLE, JUMP, RETURN, CONNECTOR):
@@ -158,7 +165,7 @@ def _build_node(node, by_id, visiting, memo):
                 source = _build(upstream, by_id, visiting, connection.source_pin, memo)
                 break
         if node.kind == OUT_VARIABLE:
-            return Assign(node.label or "?", source, negated=node.negated)
+            return Assign(node.label or "?", source, negated=node.negated, storage=node.storage)
         if node.kind == CONNECTOR:
             # A connector names the wire feeding it, so it renders as an
             # assignment to that name and the matching continuation reads the

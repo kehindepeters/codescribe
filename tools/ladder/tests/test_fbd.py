@@ -362,6 +362,35 @@ check("two pins: ET leaves on its own row", any(l.rstrip().endswith("> tEt") and
 check("two pins: no junction between different pins", not any(U["T_DOWN"] in l and "xQ" in l for l in two_pins_art))
 
 
+# --- a store that holds: set and reset ---------------------------------------
+
+# storage="set" on an outVariable was dropped, so a latch rendered as
+# "xLatched := xTrip;" - text that says the latch clears the moment its input
+# drops, where the program holds it.
+latch_st = st_render.render_pou(two_pins)
+latch_art = fbd_render.render_network(two_pins.networks[1])
+
+check_equal("set: the store is recorded", two_pins.networks[1].outputs[0].storage, "set")
+check("set: the ST guards the write", "IF xTrip THEN xLatched := TRUE; END_IF" in latch_st)
+check("set: no plain assignment survives", not any("xLatched := xTrip" in line for line in latch_st))
+check("set: the arrow is marked", any("(S)> xLatched" in line for line in latch_art))
+
+# The reset counterpart, and the same store written straight onto a block's
+# output pin instead of onto a wire.
+STORAGE = os.path.join(HERE, "fixtures", "fbd_storage.plcopen.xml")
+storage_pou = parse_fbd.parse_pous(STORAGE)[0]
+storage_st = st_render.render_pou(storage_pou)
+storage_art = fbd_render.render_pou(storage_pou)
+
+check_equal("reset: the store is recorded", storage_pou.networks[0].outputs[0].storage, "reset")
+check("reset: the ST guards the write", "IF xClear THEN xLatched := FALSE; END_IF" in storage_st)
+check("reset: the arrow is marked", any("(R)> xLatched" in line for line in storage_art))
+
+check_equal("output pin store: recorded on the box", box(storage_pou.networks[1].outputs[0]).stored_outputs["Q"], "set")
+check("output pin store: the ST guards the write", "IF tmr.Q THEN xHeld := TRUE; END_IF" in storage_st)
+check("output pin store: the pin arrow is marked", any("Q =S> xHeld" in line for line in storage_art))
+
+
 # --- language dispatch -----------------------------------------------------
 
 check_equal("LD parser ignores FBD bodies", parse_ld.parse_pous(FBD_SOURCE), [])

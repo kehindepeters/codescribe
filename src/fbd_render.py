@@ -36,17 +36,44 @@ def _render_jump(node):
     return Block(out, source.connect_row)
 
 
+def _store_head(node):
+    """The arrow head on a store: its set/reset marker, or its negation.
+
+    A set or reset holds the target until the other one fires. Drawing it as
+    a plain arrow says the store follows its input, which is the opposite.
+    """
+    if node.storage == "set":
+        return "(S)> "
+    if node.storage == "reset":
+        return "(R)> "
+    # The negation circle CODESYS draws on the pin, as an "o" on the wire.
+    return "o> " if node.negated else "> "
+
+
 def _render_assign(node):
     chars = charset.active()
     source = _render(node.source) if node.source is not None else Block([""], 0)
     lines = source.padded(source.width)
-    # The negation circle CODESYS draws on the pin, as an "o" on the wire.
-    head = "o> " if node.negated else "> "
+    head = _store_head(node)
     tail = chars["H"] * 3 + head + (node.label or "?")
     out = []
     for index, line in enumerate(lines):
         out.append(line + tail if index == source.connect_row else line)
     return Block(out, source.connect_row)
+
+
+def _pin_arrow(box, pin):
+    """The arrow for an assignment written straight onto an output pin.
+
+    "=o>" is "=>" with the negation bubble: the pin stores its inverse. "=S>"
+    and "=R>" are the set and reset a pin can carry, exactly as a coil does.
+    """
+    storage = box.stored_outputs.get(pin)
+    if storage == "set":
+        return " =S> "
+    if storage == "reset":
+        return " =R> "
+    return " =o> " if pin in box.negated_outputs else " => "
 
 
 def _is_wired(source):
@@ -115,8 +142,7 @@ def _render_call(call, read_pin=None):
         pin, assigned = pin_and_assignment
         text = pin or "?"
         if assigned:
-            # =o> is => with the negation bubble: the pin stores its inverse.
-            text += (" =o> " if pin in call.negated_outputs else " => ") + assigned
+            text += _pin_arrow(call, pin) + assigned
         elif pin in call.negated_outputs:
             text += " o"
         out_at[output_rows[index]] = text
@@ -198,8 +224,8 @@ def _render(node):
 
 def _assign_tail(node):
     chars = charset.active()
-    # The negation circle CODESYS draws on the pin, as an "o" on the wire.
-    return chars["H"] * 2 + ("o " if node.negated else "> ") + (node.label or "?")
+    head = "o " if node.negated and not node.storage else _store_head(node)
+    return chars["H"] * 2 + head + (node.label or "?")
 
 
 def _fanout_groups(source, outputs):

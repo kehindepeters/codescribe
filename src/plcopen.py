@@ -126,6 +126,27 @@ def block_outputs(block_elem):
     return outputs
 
 
+def stored_output_pins(block_elem):
+    """{pin: "set" | "reset"} for output pins that store rather than assign.
+
+    CODESYS writes storage="set" on the pin carrying an inline assignment,
+    exactly as it does on a coil. A stored value is held until something
+    resets it, so rendering one as a plain assignment says it clears the
+    moment its condition drops - the opposite of what the program does.
+    """
+    stored = {}
+    group = find_child(block_elem, "outputVariables")
+    if group is None:
+        return stored
+    for var in group:
+        if tag(var) != "variable":
+            continue
+        storage = attr(var, "storage")
+        if storage:
+            stored[var.get("formalParameter")] = storage
+    return stored
+
+
 def negated_output_pins(block_elem):
     """Output pins carrying an in-place negation bubble (negated="true").
 

@@ -32,16 +32,31 @@ from model import (
 from parse_ld import expr_to_text
 
 
+def store_statement(target, value, storage=None, negated=False):
+    """One store, however it is drawn: coil, outVariable or output pin.
+
+    A set or reset holds its target until the other one fires, so it has to
+    read as a guarded write. Emitting "xLatched := xTrip;" for a set says the
+    latch clears the moment its input drops, which is the opposite of what
+    the program does.
+    """
+    value = value or "TRUE"
+    target = target or "?"
+    if negated:
+        value = "NOT " + _operand(value)
+    if storage == "set":
+        return "IF %s THEN %s := TRUE; END_IF" % (value, target)
+    if storage == "reset":
+        return "IF %s THEN %s := FALSE; END_IF" % (value, target)
+    return "%s := %s;" % (target, value)
+
+
 def _coil_statement(coil, condition):
-    condition = condition or "TRUE"
-    target = coil.label or "?"
-    if coil.storage == "set":
-        return "IF %s THEN %s := TRUE; END_IF" % (condition, target)
-    if coil.storage == "reset":
-        return "IF %s THEN %s := FALSE; END_IF" % (condition, target)
-    if coil.negated:
-        return "%s := NOT (%s);" % (target, condition)
-    return "%s := %s;" % (target, condition)
+    if coil.negated and not coil.storage:
+        # A negated coil stores the inverse of the whole rung condition, and
+        # brackets it rather than negating only its first term.
+        return "%s := NOT (%s);" % (coil.label or "?", condition or "TRUE")
+    return store_statement(coil.label, condition, coil.storage)
 
 
 def rung_to_statements(rung):
@@ -79,7 +94,7 @@ def rung_to_statements(rung):
                     value = "%s.%s" % (name, pin)
                     if pin in item.negated_outputs:
                         value = "NOT " + value
-                    statements.append("%s := %s;" % (assigned, value))
+                    statements.append(store_statement(assigned, value, item.stored_outputs.get(pin)))
             condition = (name + "." + item.active_output) if item.active_output else name
             if item.active_output in item.negated_outputs:
                 condition = "NOT " + condition
@@ -87,11 +102,9 @@ def rung_to_statements(rung):
             statements.append(_coil_statement(item, condition))
         elif isinstance(item, Element) and item.kind == OUT_VARIABLE:
             # A store through an outVariable element - the standard shape for
-            # a non-boolean result. Power passes through, like a coil.
-            value = condition or "TRUE"
-            if item.negated:
-                value = "NOT " + _operand(value)
-            statements.append("%s := %s;" % (item.label or "?", value))
+            # a non-boolean result. Power passes through, like a coil, and so
+            # does the set/reset a coil can carry.
+            statements.append(store_statement(item.label, condition, item.storage, item.negated))
         elif isinstance(item, Element) and item.kind in (JUMP, RETURN):
             # A jump ends the rung; its guard is the rung condition so far.
             # Same comment form as the FBD path, so both grep alike.
@@ -191,9 +204,7 @@ def _fbd_value(node, statements, emitted=None):
 
     if isinstance(node, Assign):
         value = _fbd_value(node.source, statements, emitted) or "FALSE"
-        if node.negated:
-            value = "NOT " + _operand(value)
-        statements.append("%s := %s;" % (node.label or "?", value))
+        statements.append(store_statement(node.label, value, node.storage, node.negated))
         return node.label or "?"
 
     if isinstance(node, Call):
@@ -237,7 +248,7 @@ def _fbd_value(node, statements, emitted=None):
                 # A negated output pin stores its inverse.
                 if pin in node.negated_outputs:
                     value = "NOT " + value
-                statements.append("%s := %s;" % (assigned, value))
+                statements.append(store_statement(assigned, value, node.stored_outputs.get(pin)))
         result = (name + "." + node.active_output) if node.active_output else name
         if node.active_output in node.negated_outputs:
             result = "NOT " + result

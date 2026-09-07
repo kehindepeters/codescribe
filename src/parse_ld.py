@@ -43,6 +43,7 @@ from plcopen import (
     iter_bodies,
     negated_output_pins,
     parse_interface,
+    stored_output_pins,
     tag,
 )
 
@@ -107,6 +108,7 @@ def parse_ld_body(body_elem):
                 instance_name=child.get("instanceName") if is_block else None,
                 outputs=block_outputs(child) if is_block else None,
                 negated_outputs=negated_output_pins(child) if is_block else None,
+                stored_outputs=stored_output_pins(child) if is_block else None,
             )
         )
     return nodes
@@ -254,6 +256,7 @@ def _build_block(node, by_id, visiting, via_pin, drawn):
         output_wired=via_pin is not None,
         power_negated=power_negated,
         negated_outputs=set(node.negated_outputs),
+        stored_outputs=node.stored_outputs,
         pin_blocks=pin_blocks,
     )
     return series([power_expr, element])
