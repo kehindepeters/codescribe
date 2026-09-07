@@ -63,9 +63,15 @@ EMPTY_STATS = {
 
 STATS = dict(EMPTY_STATS)
 
+# Names behind STATS["skipped"], so the summary can say *what* was skipped.
+# A bare count reads like something went missing; a name plus the reason
+# (SFC/CFC have no renderer) answers the question before it is asked.
+SKIPPED_POUS = []
+
 
 def reset_stats():
     STATS.update(EMPTY_STATS)
+    del SKIPPED_POUS[:]
 
 
 def summary():
@@ -91,6 +97,12 @@ def summary():
             STATS["skipped"],
         )
     )
+    if SKIPPED_POUS:
+        shown = SKIPPED_POUS[:6]
+        names = ", ".join(shown)
+        if len(SKIPPED_POUS) > len(shown):
+            names += ", +%d more" % (len(SKIPPED_POUS) - len(shown))
+        line += " (no renderable body - SFC/CFC: %s)" % names
     # Falling back to the rebuilt declaration is silent otherwise, and it
     # costs every comment, pragma and attribute in the file. Say so.
     if STATS["fallback_declarations"]:
@@ -325,6 +337,10 @@ def write_rendered_text(obj, base_path, member_name=None):
                     + " carries no renderable body for the member itself;"
                     + " nothing written - review the native xml"
                 )
+            else:
+                # Members announce themselves above; these are the SFC/CFC
+                # bodies no renderer exists for.
+                SKIPPED_POUS.append(obj.get_name())
             STATS["skipped"] += 1
             return False
 

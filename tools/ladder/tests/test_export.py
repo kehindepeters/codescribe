@@ -160,6 +160,9 @@ try:
     check_equal("each render is counted", graphical_export.STATS["rendered"], 2)
     check_equal("the skipped sfc is counted", graphical_export.STATS["skipped"], 1)
     check("the summary names both costs", "CODESYS export_xml" in graphical_export.summary())
+    # A bare "skipped 1" reads like something went missing; the summary must
+    # say which POU and why.
+    check("the summary names the skipped pou", "SFC/CFC: SFC_TEST" in graphical_export.summary())
 
     graphical_export.reset_stats()
     check_equal("reset clears the counts", graphical_export.STATS["rendered"], 0)
@@ -588,6 +591,43 @@ try:
     import_export.remove_tracked_objects([lib_manager_obj, visu_manager_obj])
     check("import does not remove the library manager", not lib_manager_obj.removed)
     check("import does not remove the visualisation manager", not visu_manager_obj.removed)
+finally:
+    shutil.rmtree(workspace)
+
+
+# --- an empty export must never destroy the previous one ---------------------
+
+# Export Lib To Files on a device project walks nothing (its objects all live
+# under Devices), and the empty staging folder then swapped in over the real
+# export, wiping it. The swap now refuses an empty staging outright.
+import util  # noqa: E402
+
+workspace = tempfile.mkdtemp()
+try:
+    target = os.path.join(workspace, "Project")
+    os.mkdir(target)
+    handle = io.open(os.path.join(target, "KEEP.st"), "w", encoding="utf-8")
+    handle.write(u"PROGRAM Keep\n")
+    handle.close()
+
+    staging = util.begin_export_folder(target)
+    try:
+        util.finalize_export_folder(target, staging)
+        check("an empty export is refused", False, "finalize accepted an empty staging folder")
+    except util.NothingExportedError as error:
+        check("an empty export is refused", True)
+        check("the refusal names the preserved folder", target in str(error))
+    check("the previous export survives", os.path.exists(os.path.join(target, "KEEP.st")))
+    check("the empty staging folder is cleaned up", not os.path.exists(staging))
+
+    # A real export must still swap in exactly as before.
+    staging = util.begin_export_folder(target)
+    handle = io.open(os.path.join(staging, "NEW.st"), "w", encoding="utf-8")
+    handle.write(u"PROGRAM New\n")
+    handle.close()
+    util.finalize_export_folder(target, staging)
+    check("a real export still swaps in", os.path.exists(os.path.join(target, "NEW.st")))
+    check("the swap still replaces the old copy", not os.path.exists(os.path.join(target, "KEEP.st")))
 finally:
     shutil.rmtree(workspace)
 
