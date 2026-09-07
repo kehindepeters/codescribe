@@ -28,6 +28,7 @@
         <interface>
           <localVars>
             <variable name="tmr"><type><derived name="TON"/></type></variable>
+            <variable name="pulse"><type><derived name="TP"/></type></variable>
           </localVars>
         </interface>
         <body>
@@ -69,6 +70,37 @@
               <outputVariables>
                 <variable formalParameter="Q" storage="set">
                   <connectionPointOut><expression>xHeld</expression></connectionPointOut>
+                </variable>
+                <variable formalParameter="ET">
+                  <connectionPointOut/>
+                </variable>
+              </outputVariables>
+            </block>
+
+            <!-- Network 3: a box whose title needs an odd number of padding
+                 spaces. CPython 3 and IronPython 2.7 split an odd remainder
+                 on opposite sides, so a file rendered inside CODESYS and the
+                 same file rendered by the dev CLI differed by one column
+                 here. -->
+            <inVariable localId="20">
+              <position x="0" y="0"/>
+              <connectionPointOut/>
+              <expression>xGo</expression>
+            </inVariable>
+            <block localId="21" typeName="TP" instanceName="pulse">
+              <position x="0" y="0"/>
+              <inputVariables>
+                <variable formalParameter="IN">
+                  <connectionPointIn><connection refLocalId="20"/></connectionPointIn>
+                </variable>
+                <variable formalParameter="PT">
+                  <connectionPointIn/>
+                </variable>
+              </inputVariables>
+              <inOutVariables/>
+              <outputVariables>
+                <variable formalParameter="Q">
+                  <connectionPointOut><expression>xPulseOut</expression></connectionPointOut>
                 </variable>
                 <variable formalParameter="ET">
                   <connectionPointOut/>

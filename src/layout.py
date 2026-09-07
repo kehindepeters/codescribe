@@ -43,6 +43,21 @@ class Block(object):
         return out
 
 
+def centred(text, width):
+    """``text`` centred in ``width``, with any odd space on the right.
+
+    str.center splits an odd remainder the other way round under IronPython
+    2.7 than under CPython 3, so a file rendered inside CODESYS and the same
+    file rendered by the dev CLI differ by one column on any box whose title
+    needs odd padding. Doing the arithmetic here settles it: the left padding
+    is the floor, which is what CODESYS itself produces.
+    """
+    if width <= len(text):
+        return text
+    lead = (width - len(text)) // 2
+    return " " * lead + text + " " * (width - len(text) - lead)
+
+
 def stack(blocks):
     """Stack Blocks vertically. Returns (lines, absolute connect rows)."""
     lines = []

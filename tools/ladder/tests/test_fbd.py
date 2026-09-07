@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "src"))
 sys.path.insert(0, os.path.join(HERE, ".."))
 
 import charset  # noqa: E402
+import layout  # noqa: E402
 import fbd_render  # noqa: E402
 import parse_ld  # noqa: E402
 import parse_fbd  # noqa: E402
@@ -405,6 +406,18 @@ check("reset: the arrow is marked", any("(R)> xLatched" in line for line in stor
 check_equal("output pin store: recorded on the box", box(storage_pou.networks[1].outputs[0]).stored_outputs["Q"], "set")
 check("output pin store: the ST guards the write", "IF tmr.Q THEN xHeld := TRUE; END_IF" in storage_st)
 check("output pin store: the pin arrow is marked", any("Q =S> xHeld" in line for line in storage_art))
+
+# str.center splits an odd remainder on opposite sides under CPython 3 and
+# IronPython 2.7, so a box title needing odd padding came out one column
+# further right from the dev CLI than from the export CODESYS runs. The two
+# have to agree on the byte, or every such line is a phantom diff.
+check_equal("centred: the odd space goes right", layout.centred("ab", 5), " ab  ")
+check_equal("centred: an even split is unchanged", layout.centred("ab", 6), "  ab  ")
+check_equal("centred: no room to centre in", layout.centred("abcd", 3), "abcd")
+check(
+    "centred: a title with odd padding sits where CODESYS puts it",
+    "          pulse : TP" in storage_art,
+)
 
 
 # --- edge detection on a block pin -------------------------------------------

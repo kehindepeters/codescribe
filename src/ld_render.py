@@ -16,7 +16,7 @@ box-drawing Unicode or plain ASCII.
 from __future__ import unicode_literals
 
 import charset
-from layout import Block
+from layout import Block, centred
 from model import BLOCK, COIL, CONTACT, Element, Empty, Parallel, Series
 
 # The letter a contact carries for edge detection, reused on a block's power
@@ -162,7 +162,7 @@ def _render_block(element):
     title = element.title
     inner = max([len(title)] + [len(left[i]) + 3 + len(right[i]) for i in range(rows)])
 
-    lines = [title.center(inner + 2)]
+    lines = [centred(title, inner + 2)]
     lines.append(chars["TL"] + chars["H"] * inner + chars["TR"])
     for index in range(rows):
         gap = inner - len(left[index]) - len(right[index])

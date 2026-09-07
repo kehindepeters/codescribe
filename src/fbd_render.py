@@ -10,7 +10,7 @@ whatever row their source ended up on, which keeps every wire horizontal.
 from __future__ import unicode_literals
 
 import charset
-from layout import Block, stack
+from layout import Block, centred, stack
 from ld_render import network_headers, render_declaration
 from model import Assign, Call, Jump, Label, OutputRef, Signal
 
@@ -174,7 +174,7 @@ def _render_call(call, read_pin=None):
     lines = []
     for row in range(height):
         if row == box_first - 2:
-            box = title.center(inner + 2)
+            box = centred(title, inner + 2)
         elif row == box_first - 1:
             box = chars["TL"] + chars["H"] * inner + chars["TR"]
         elif row == box_last + 1:
