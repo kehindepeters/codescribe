@@ -21,6 +21,7 @@ VAR
 	fbenable: TON;
 	xResult : BOOL;
 	xTimerDone : BOOL;
+	TON_0: TON;
 END_VAR
 
 (* Network 1 *)

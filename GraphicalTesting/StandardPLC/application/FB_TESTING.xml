@@ -215,7 +215,7 @@
               <Single Name="Comment" Type="string">//Safely power off PLC when ignition (VBB15) is lower than 5V for more than 10s. Enable timer on falling edge</Single>
               <Single Name="Title" Type="string"></Single>
               <Single Name="Label" Type="string"></Single>
-              <Single Name="OutCommented" Type="bool">True</Single>
+              <Single Name="OutCommented" Type="bool">False</Single>
               <List2 Name="NetworkItems">
                 <Single Type="{acfc6f68-8e3a-4af5-bf81-3dd512095a46}" Method="IArchivable">
                   <Single Name="BoxType" Type="string">ifmIOcommon.SupplySwitch</Single>
@@ -1019,7 +1019,7 @@
               <Single Name="Id" Type="long">150</Single>
             </Single>
           </List2>
-          <Single Name="BranchCounter" Type="int">6</Single>
+          <Single Name="BranchCounter" Type="int">7</Single>
           <Single Name="ValidIds" Type="bool">True</Single>
         </Single>
         <Single Name="Interface" Type="{a9ed5b7e-75c5-4651-af16-d2c27e98cb94}" Method="IArchivable">
@@ -1131,6 +1131,11 @@
                 <Single Name="Text" Type="string">	xTimerDone : BOOL;</Single>
               </Single>
               <Single Type="{a5de0b0b-1cb5-4913-ac21-9d70293ec00d}" Method="IArchivable">
+                <Single Name="Id" Type="long">214</Single>
+                <Null Name="Tag" />
+                <Single Name="Text" Type="string">	TON_0: TON;</Single>
+              </Single>
+              <Single Type="{a5de0b0b-1cb5-4913-ac21-9d70293ec00d}" Method="IArchivable">
                 <Single Name="Id" Type="long">4</Single>
                 <Null Name="Tag" />
                 <Single Name="Text" Type="string">END_VAR</Single>
@@ -1143,7 +1148,7 @@
             </Array>
           </Single>
         </Single>
-        <Single Name="UniqueIdGenerator" Type="string">186</Single>
+        <Single Name="UniqueIdGenerator" Type="string">214</Single>
         <Single Name="POULevel" Type="{8e575c5b-1d37-49c6-941b-5c0ec7874787}">Standard</Single>
         <List Name="ChildObjectGuids" Type="System.Collections.ArrayList" />
         <Single Name="AddAttributeSubsequent" Type="bool">False</Single>

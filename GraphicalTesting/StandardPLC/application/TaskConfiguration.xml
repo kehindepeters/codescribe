@@ -88,11 +88,19 @@
         <Single Name="EventPOUGuid" Type="System.Guid">205b1f78-9060-49b9-896f-0aab4eb3cc59</Single>
         <List Name="PouList" Type="{33f568bb-4a2c-48cb-a762-34cca3066d03}">
           <Single Type="{f194d1ef-7376-42ce-a729-4a5485a97a46}" Method="IArchivable">
-            <Single Name="Name" Type="string">PLC_PRG</Single>
+            <Single Name="Name" Type="string">Standard_ST</Single>
             <Single Name="Comment" Type="string"></Single>
           </Single>
           <Single Type="{f194d1ef-7376-42ce-a729-4a5485a97a46}" Method="IArchivable">
-            <Single Name="Name" Type="string">_CAN_MAIN</Single>
+            <Single Name="Name" Type="string">SFC_TEST</Single>
+            <Single Name="Comment" Type="string"></Single>
+          </Single>
+          <Single Type="{f194d1ef-7376-42ce-a729-4a5485a97a46}" Method="IArchivable">
+            <Single Name="Name" Type="string">LD_TEST</Single>
+            <Single Name="Comment" Type="string"></Single>
+          </Single>
+          <Single Type="{f194d1ef-7376-42ce-a729-4a5485a97a46}" Method="IArchivable">
+            <Single Name="Name" Type="string">FB_TESTING</Single>
             <Single Name="Comment" Type="string"></Single>
           </Single>
         </List>
