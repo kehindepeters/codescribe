@@ -194,19 +194,19 @@ def render_plcopen(plcopen_path, declaration_text=None, member_name=None, native
         pous[0][0].declaration_text = declaration_text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
     STATS["parse_seconds"] += time.time() - started
 
-    # The editor's own network list, where one is available. Only for a file
-    # holding a single renderable POU: the list belongs to one POU, and there
-    # is nothing in it to say which.
+    # The editor's own network list, where one is available. It belongs to one
+    # POU and carries nothing to say which, so a file holding more than one
+    # renderable POU cannot use it - and that counts as a failure to line them
+    # up rather than as a reason to say nothing.
     warnings = []
-    if native_path is not None and len(pous) == 1:
-        native = native_networks.read_networks(native_path)
-        if native:
-            aligned = native_networks.align(native, pous[0][0].networks)
-            if aligned is None:
-                STATS["alignment_failures"] += 1
-                warnings.append(ALIGNMENT_WARNING)
-            else:
-                pous[0][0].networks = aligned
+    native = native_networks.read_networks(native_path) if native_path is not None else None
+    if native:
+        aligned = native_networks.align(native, pous[0][0].networks) if len(pous) == 1 else None
+        if aligned is None:
+            STATS["alignment_failures"] += 1
+            warnings.append(ALIGNMENT_WARNING)
+        else:
+            pous[0][0].networks = aligned
 
     # A member's export carries the parent's declaration, not its own, so
     # both renderings have to open by saying whose declaration they show.

@@ -402,8 +402,9 @@ def export_visualisation_manager(child_obj, parent_obj, parent_folder_path, expo
     it was dropped from the export entirely. Read-only is the middle ground:
     the .service.txt suffix is ignored by the importer by construction
     (dispatch is on .xml and .st), the project template still carries the real
-    object, and the configuration becomes reviewable. recursive=True because
-    the target/web visualisations and the key configuration live under it.
+    object, and the configuration becomes reviewable. recursive=True for the
+    target and web visualisations that live under the manager; the key
+    configuration is inside the manager entry itself, not in a child.
 
     Best-effort: a failure warns and the export carries on.
     """

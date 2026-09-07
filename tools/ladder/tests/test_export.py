@@ -416,6 +416,20 @@ for device in ("SafetyPLC", "StandardPLC"):
             )
 
 
+# A file holding more than one renderable POU cannot use the list at all: it
+# belongs to one POU and says nothing about which. That is a failure to line
+# them up, not a reason to say nothing - the file has to carry the warning
+# either way, or the README's promise that it always says so is false.
+graphical_export.reset_stats()
+TWO_POUS = os.path.join(HERE, "fixtures", "two_pous.plcopen.xml")
+NATIVE = os.path.join(HERE, "fixtures", "native_networks.xml")
+two_pou_lines = graphical_export.render_plcopen(TWO_POUS, None, None, NATIVE)
+check("two POUs in one file: the rendering warns", graphical_export.ALIGNMENT_WARNING in two_pou_lines)
+check_equal("two POUs in one file: the failure is counted", graphical_export.STATS["alignment_failures"], 1)
+check("two POUs in one file: both are still drawn", "xOutTwo" in "".join(two_pou_lines))
+graphical_export.reset_stats()
+
+
 # The alignment refuses rather than guesses. One body more on the parsed side
 # than the native list accounts for means an assumption broke, and a silently
 # misnumbered file is worse than one that says it could not tell.
