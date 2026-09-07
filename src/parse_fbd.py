@@ -6,7 +6,7 @@ looking for sinks nothing else consumes - but the result is a tree of calls
 rather than a series/parallel chain.
 """
 
-from model import BLOCK, Assign, Call, Jump, Label, Network, Node, Pou, Signal
+from model import BLOCK, Assign, Call, Jump, Label, Network, Node, OutputRef, Pou, Signal
 from plcopen import (
     block_connections,
     block_outputs,
@@ -100,26 +100,32 @@ def _negate(source):
         inputs=[("In", source)],
         outputs=[("Out", None)],
         active_output="Out",
-        output_wired=True,
+        wired_outputs=["Out"],
     )
 
 
 def _build(node, by_id, visiting, via_pin=None, memo=None):
-    """Build the tree feeding a node.
+    """Build the tree feeding a node, as read through ``via_pin``.
 
-    Results are memoised on (localId, pin) so a block feeding two outputs
-    yields the same object to both, which is what lets the renderers draw one
-    box with a branch instead of two identical boxes.
+    Memoised on the localId alone, so every reader of an element gets the very
+    same object - which is what lets the renderers draw one box with a branch
+    instead of two identical boxes, and lets the ST emit one call. Keying on
+    the pin as well made a block read through two of its pins into two blocks.
+    The pin is instead recorded on the wire, as an OutputRef, and remembered
+    on the call so the renderer knows which pins to break the box wall for.
     """
     if memo is None:
         memo = {}
-    key = (node.local_id, via_pin)
-    if key not in memo:
-        memo[key] = _build_node(node, by_id, visiting, via_pin, memo)
-    return memo[key]
+    if node.local_id not in memo:
+        memo[node.local_id] = _build_node(node, by_id, visiting, memo)
+    built = memo[node.local_id]
+    if via_pin is not None and isinstance(built, Call):
+        built.wired_outputs.add(via_pin)
+        return OutputRef(built, via_pin)
+    return built
 
 
-def _build_node(node, by_id, visiting, via_pin, memo):
+def _build_node(node, by_id, visiting, memo):
     if node.local_id in visiting:
         return Signal("<cycle at %s>" % node.local_id)
     visiting = visiting | set([node.local_id])
@@ -136,18 +142,11 @@ def _build_node(node, by_id, visiting, via_pin, memo):
                 source = _negate(source)
             inputs.append((connection.target_pin, source))
 
-        active = via_pin
-        if active is None and node.outputs:
-            active = node.outputs[0][0]
-
         return Call(
             type_name=node.type_name,
             instance_name=node.instance_name,
             inputs=inputs,
             outputs=list(node.outputs),
-            active_output=active,
-            # via_pin is set by the consumer; a network sink has none.
-            output_wired=via_pin is not None,
             st_code=list(node.st_code),
             negated_outputs=set(node.negated_outputs),
         )

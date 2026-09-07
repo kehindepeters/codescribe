@@ -24,6 +24,7 @@ from model import (
     Element,
     Jump,
     Label,
+    OutputRef,
     Series,
     Signal,
     is_simple_term,
@@ -158,6 +159,20 @@ def _fbd_value(node, statements, emitted=None):
         emitted = {}
     if node is None:
         return ""
+
+    if isinstance(node, OutputRef):
+        # The call is emitted once however many of its pins are read; only the
+        # value differs per reader, so it is computed here rather than
+        # memoised with the call.
+        value = _fbd_value(node.call, statements, emitted)
+        if node.call.is_operator or not node.pin:
+            # An operator has no instance to take a pin from; it inlines as
+            # the one expression whichever pin reads it.
+            return value
+        text = "%s.%s" % (node.call.instance_name, node.pin)
+        if node.pin in node.call.negated_outputs:
+            text = "NOT " + text
+        return text
 
     if isinstance(node, Signal):
         return node.text

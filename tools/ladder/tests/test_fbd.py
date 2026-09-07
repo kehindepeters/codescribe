@@ -24,7 +24,7 @@ import fbd_render  # noqa: E402
 import parse_ld  # noqa: E402
 import parse_fbd  # noqa: E402
 import st_render  # noqa: E402
-from model import Call, Network, Pou, Signal  # noqa: E402
+from model import Call, Network, OutputRef, Pou, Signal  # noqa: E402
 from render import write  # noqa: E402
 
 # Referenced through the charset table rather than as literal glyphs: this
@@ -35,6 +35,15 @@ FIXTURES = os.path.join(HERE, "fixtures", "codesys")
 FBD_SOURCE = os.path.join(FIXTURES, "FbTesting.xml")
 LD_SOURCE = os.path.join(FIXTURES, "LDTesting.xml")
 SFC_SOURCE = os.path.join(FIXTURES, "SFCTesting.xml")
+
+def box(node):
+    """The Call a wire reads, unwrapping the pin the wire names.
+
+    A wire that reads a named output pin arrives as an OutputRef around the
+    call, so that a box read through two pins stays one box.
+    """
+    return node.call if isinstance(node, OutputRef) else node
+
 
 failures = []
 
@@ -116,10 +125,16 @@ check_equal("output assignment is captured", outputs["uiOutVoltage"], "uiCurrSup
 # Network 2 nests three calls: GT -> TOF -> SupplySwitch.
 comment2, tree2 = pou.networks[1].comment, pou.networks[1].outputs[0]
 check_equal("network 2 root", tree2.instance_name, "fbSupplySwitch")
-tof = tree2.inputs[1][1]
+
+# The pin a wire reads is on the wire, not on the box it reads: a box is one
+# box however many of its pins are read.
+tof_wire = tree2.inputs[1][1]
+check("the wire into fbSupplySwitch names its pin", isinstance(tof_wire, OutputRef))
+check_equal("wire leaves TOF on Q", tof_wire.pin, "Q")
+tof = tof_wire.call
 check_equal("nested TOF", tof.instance_name, "TOF_0")
-check_equal("wire leaves TOF on Q", tof.active_output, "Q")
-gt = tof.inputs[0][1]
+check("TOF knows Q is read", "Q" in tof.wired_outputs)
+gt = box(tof.inputs[0][1])
 check_equal("nested GT", gt.type_name, "GT")
 
 # An operator has no instance name, so it inlines as an expression in ST.
@@ -202,8 +217,8 @@ check("flow: the label is shown", any("(* label: END *)" in line for line in flo
 
 # negated="true" on an inVariable inverts the logic if it is ignored.
 guard = flow.networks[0].outputs[0]
-check_equal("flow: negation reaches the tree", guard.condition.inputs[0][1].negated, True)
-check_equal("flow: negation renders", guard.condition.inputs[0][1].text, "NOT xInitDone")
+check_equal("flow: negation reaches the tree", box(guard.condition).inputs[0][1].negated, True)
+check_equal("flow: negation renders", box(guard.condition).inputs[0][1].text, "NOT xInitDone")
 check("flow: negation survives into ST", any("(NOT xInitDone) OR" in line for line in flow_st))
 
 # An EXECUTE box is nothing but inline ST; drawing the box alone loses it all.
@@ -307,8 +322,44 @@ check("fanout: the branch is drawn", any(U["T_DOWN"] in l and "Flags.ConvOn" in 
 check("fanout: the negated leg keeps its bubble", any(U["BL"] in l and "o Flags.ConvOff" in l for l in fan_art))
 
 # Identity, not equality, is what tells a fan-out from two equal expressions.
+# The wires differ - each names the pin it reads - but the box behind them is
+# one object.
 first, second = fan.networks[0].outputs
-check("fanout: shared nodes are one object", first.source is second.source)
+check("fanout: shared nodes are one object", box(first.source) is box(second.source))
+
+
+# --- one instance read through two of its pins -------------------------------
+
+# A timer whose Q feeds one store and whose ET feeds another. Memoising the
+# tree on (localId, pin) made that two timers: two boxes drawn, and two calls
+# emitted, so a reader concluded the timer ran twice each cycle.
+TWO_PINS = os.path.join(HERE, "fixtures", "36-2-fbd-two-output-pins.xml")
+two_pins = parse_fbd.parse_pous(TWO_PINS)[0]
+two_pins_st = st_render.render_pou(two_pins)
+# The network alone: render_pou would also give us the declaration, where
+# "tmr : TON" appears again as the variable it is.
+two_pins_art = fbd_render.render_network(two_pins.networks[0])
+
+check_equal("two pins: one network", len(two_pins.networks[0].outputs), 2)
+check(
+    "two pins: both stores read the same box",
+    box(two_pins.networks[0].outputs[0].source) is box(two_pins.networks[0].outputs[1].source),
+)
+check_equal(
+    "two pins: the pins are on the wires",
+    sorted(output.source.pin for output in two_pins.networks[0].outputs),
+    ["ET", "Q"],
+)
+check_equal("two pins: the timer is called once", len([l for l in two_pins_st if l.startswith("tmr(")]), 1)
+check("two pins: Q is stored", "xQ := tmr.Q;" in two_pins_st)
+check("two pins: ET is stored", "tEt := tmr.ET;" in two_pins_st)
+check_equal("two pins: one box is drawn", len([l for l in two_pins_art if "tmr : TON" in l]), 1)
+
+# Two pins are two wires, not one branched wire: a junction column here would
+# draw ET and Q as the same signal.
+check("two pins: Q leaves on its own row", any(l.rstrip().endswith("> xQ") and "Q" + U["PIN_R"] in l for l in two_pins_art))
+check("two pins: ET leaves on its own row", any(l.rstrip().endswith("> tEt") and "ET" + U["PIN_R"] in l for l in two_pins_art))
+check("two pins: no junction between different pins", not any(U["T_DOWN"] in l and "xQ" in l for l in two_pins_art))
 
 
 # --- language dispatch -----------------------------------------------------

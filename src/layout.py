@@ -12,9 +12,13 @@ import charset
 
 
 class Block(object):
-    def __init__(self, lines, connect_row):
+    def __init__(self, lines, connect_row, pin_rows=None):
         self.lines = lines
         self.connect_row = connect_row
+        # For a box: the row each output pin sits on, so a caller branching
+        # several wires off it can leave each one level with the pin it
+        # reads instead of guessing.
+        self.pin_rows = pin_rows if pin_rows is not None else {}
 
     @property
     def width(self):

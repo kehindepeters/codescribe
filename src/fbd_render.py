@@ -12,7 +12,7 @@ from __future__ import unicode_literals
 import charset
 from layout import Block, stack
 from ld_render import render_declaration
-from model import Assign, Call, Jump, Label, Signal
+from model import Assign, Call, Jump, Label, OutputRef, Signal
 
 
 def _render_signal(node):
@@ -60,7 +60,7 @@ def _is_wired(source):
     return not (isinstance(source, Signal) and not source.label)
 
 
-def _render_call(call):
+def _render_call(call, read_pin=None):
     chars = charset.active()
     input_blocks = []
     for _pin, source in call.inputs:
@@ -136,12 +136,14 @@ def _render_call(call):
         if _is_wired(pin_and_source[1]):
             handoff_pins.add(input_rows[index])
 
-    # The active output only breaks the box wall with a tee if a consumer is
-    # actually there to receive it.
+    # An output pin only breaks the box wall with a tee if a consumer is
+    # actually there to receive it - and a box read through two pins breaks
+    # it twice.
     pins = [pin for pin, _assigned in call.outputs]
-    live_output_row = None
-    if call.output_wired and call.active_output in pins:
-        live_output_row = output_rows[pins.index(call.active_output)]
+    live_output_rows = set()
+    for pin in call.wired_outputs:
+        if pin in pins:
+            live_output_rows.add(output_rows[pins.index(pin)])
 
     lines = []
     for row in range(height):
@@ -155,25 +157,32 @@ def _render_call(call):
             left_pin = in_at.get(row, "")
             right_pin = out_at.get(row, "")
             left_edge = chars["PIN_L"] if row in handoff_pins else chars["V"]
-            right_edge = chars["PIN_R"] if row == live_output_row else chars["V"]
+            right_edge = chars["PIN_R"] if row in live_output_rows else chars["V"]
             gap = inner - len(left_pin) - len(right_pin)
             box = left_edge + left_pin + " " * gap + right_pin + right_edge
         else:
             box = " " * (inner + 2)
         lines.append(left[row] + box)
 
-    # The wire leaves on whichever output pin the consumer asked for.
+    # The wire leaves on whichever output pin this consumer asked for.
+    pin_rows = {}
+    for index, pin in enumerate(pins):
+        pin_rows[pin] = output_rows[index]
+
+    wanted = read_pin if read_pin is not None else call.active_output
     connect_row = box_first
-    pins = [pin for pin, _assigned in call.outputs]
-    if call.active_output in pins:
-        connect_row = output_rows[pins.index(call.active_output)]
+    if wanted in pin_rows:
+        connect_row = pin_rows[wanted]
     elif output_rows:
         connect_row = output_rows[0]
 
-    return Block(lines, connect_row)
+    return Block(lines, connect_row, pin_rows)
 
 
 def _render(node):
+    if isinstance(node, OutputRef):
+        # One box, entered on the pin this wire reads.
+        return _render_call(node.call, node.pin)
     if isinstance(node, Call):
         return _render_call(node)
     if isinstance(node, Assign):
@@ -193,6 +202,39 @@ def _assign_tail(node):
     return chars["H"] * 2 + ("o " if node.negated else "> ") + (node.label or "?")
 
 
+def _fanout_groups(source, outputs):
+    """[(rows, outputs)] - one group per output pin that is read.
+
+    Outputs reading the same pin share one wire and are branched off it, so
+    they stack on consecutive rows under that pin. Outputs reading different
+    pins do not share anything: each leaves the box on its own pin's row, and
+    joining them into one junction column would draw two signals as one.
+    """
+    order = []
+    at_pin = {}
+    for output in outputs:
+        pin = output.source.pin if isinstance(output.source, OutputRef) else None
+        if pin not in at_pin:
+            at_pin[pin] = []
+            order.append(pin)
+        at_pin[pin].append(output)
+    order.sort(key=lambda pin: source.pin_rows.get(pin, source.connect_row))
+
+    groups = []
+    taken = set()
+    for pin in order:
+        rows = []
+        row = source.pin_rows.get(pin, source.connect_row)
+        for output in at_pin[pin]:
+            while row in taken:
+                row += 1
+            taken.add(row)
+            rows.append(row)
+            row += 1
+        groups.append((rows, at_pin[pin]))
+    return groups
+
+
 def _render_fanout(outputs):
     """One source driving several outputs: draw it once and branch.
 
@@ -204,45 +246,58 @@ def _render_fanout(outputs):
     # A short lead before the junction, so the branch is not welded to the box
     # edge. padded() extends the wire row and pads the rest with spaces.
     width = source.width + 2
-    lines = source.padded(width)
+    groups = _fanout_groups(source, outputs)
 
-    rows = [source.connect_row + index for index in range(len(outputs))]
-    while len(lines) <= rows[-1]:
+    tails = {}
+    joints = {}
+    verticals = set()
+    for rows, group in groups:
+        for row, output in zip(rows, group):
+            tails[row] = output
+        if len(rows) == 1:
+            joints[rows[0]] = chars["H"]
+            continue
+        # One wire, branched: the junction column belongs to this pin alone.
+        joints[rows[0]] = chars["T_DOWN"]
+        joints[rows[-1]] = chars["BL"]
+        for row in rows[1:-1]:
+            joints[row] = chars["T_RIGHT"]
+        for row in range(rows[0] + 1, rows[-1]):
+            verticals.add(row)
+
+    # Only the row a wire actually leaves the box on is extended to the
+    # junction; the rows below it are carried by the junction column.
+    lines = source.padded(width, wire_rows=set(rows[0] for rows, _group in groups))
+
+    last = max(tails)
+    while len(lines) <= last:
         lines.append(" " * width)
 
-    first, last = rows[0], rows[-1]
     out = []
     for row, line in enumerate(lines):
-        if row == first:
-            joint = chars["T_DOWN"] if len(rows) > 1 else chars["H"]
-        elif row == last:
-            joint = chars["BL"]
-        elif row in rows:
-            joint = chars["T_RIGHT"]
-        elif first < row < last:
-            joint = chars["V"]
-        else:
-            joint = " "
-        tail = _assign_tail(outputs[rows.index(row)]) if row in rows else ""
+        joint = joints.get(row, chars["V"] if row in verticals else " ")
+        tail = _assign_tail(tails[row]) if row in tails else ""
         out.append(line + joint + tail)
 
-    return Block(out, first)
+    return Block(out, min(tails))
 
 
 def _shared_source(outputs):
     """The single source every output hangs off, or None.
 
     Identity, not equality: the parser memoises shared nodes, so two outputs
-    fed by one block hold the very same object.
+    fed by one block hold the very same object - through an OutputRef each
+    when they read different pins of it.
     """
     if len(outputs) < 2:
         return None
     if not all(isinstance(output, Assign) for output in outputs):
         return None
-    first = outputs[0].source
-    if first is None:
+    sources = [output.source for output in outputs]
+    if sources[0] is None:
         return None
-    return first if all(output.source is first for output in outputs) else None
+    boxes = [source.call if isinstance(source, OutputRef) else source for source in sources]
+    return sources[0] if all(box is boxes[0] for box in boxes) else None
 
 
 def render_network(network):

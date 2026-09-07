@@ -200,7 +200,7 @@ class Call(object):
         inputs=None,
         outputs=None,
         active_output=None,
-        output_wired=False,
+        wired_outputs=None,
         st_code=None,
         negated_outputs=None,
     ):
@@ -208,6 +208,10 @@ class Call(object):
         self.instance_name = instance_name
         self.inputs = inputs if inputs is not None else []
         self.outputs = outputs if outputs is not None else []
+        # The pin a reader gets when it does not name one. Which pin a given
+        # reader takes lives on the reader, in an OutputRef.
+        if active_output is None and self.outputs:
+            active_output = self.outputs[0][0]
         self.active_output = active_output
         # Pins carrying CODESYS's in-place negation bubble: the value leaving
         # them is the inverse of the pin.
@@ -215,9 +219,15 @@ class Call(object):
         # An EXECUTE box carries inline ST as its whole body. Dropping it loses
         # the logic entirely while still drawing a plausible-looking box.
         self.st_code = st_code if st_code is not None else []
-        # True when something downstream consumes the active output. A network
-        # sink has an active output but nothing to hand it to.
-        self.output_wired = output_wired
+        # Every output pin something downstream reads. A network sink reads
+        # none; a block read through two of its pins has two, and is still one
+        # box, called once.
+        self.wired_outputs = set(wired_outputs) if wired_outputs is not None else set()
+
+    @property
+    def output_wired(self):
+        """True when anything downstream reads an output of this call."""
+        return bool(self.wired_outputs)
 
     @property
     def title(self):
@@ -232,6 +242,22 @@ class Call(object):
 
     def __repr__(self):
         return "Call(%r, %r)" % (self.type_name, self.instance_name)
+
+
+class OutputRef(object):
+    """The value on one output pin of a Call, as read by its consumer.
+
+    The pin belongs to the wire, not to the box. Holding it on the Call meant
+    a block read through two pins was two Calls: drawn twice, and called twice
+    in the ST, so a reader concluded a stateful block ran twice per cycle.
+    """
+
+    def __init__(self, call, pin):
+        self.call = call
+        self.pin = pin
+
+    def __repr__(self):
+        return "OutputRef(%r, %r)" % (self.call, self.pin)
 
 
 class Network(object):
