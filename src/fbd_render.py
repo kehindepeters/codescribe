@@ -23,12 +23,12 @@ def _render_label(node):
     return Block(["(* label: " + node.name + " *)"], 0)
 
 
-def _render_jump(node):
+def _render_jump(node, drawn):
     chars = charset.active()
     tail = chars["H"] * 3 + ">> " + (node.target or "?")
     if node.condition is None:
         return Block([tail], 0)
-    source = _render(node.condition)
+    source = _render(node.condition, drawn)
     lines = source.padded(source.width)
     out = []
     for index, line in enumerate(lines):
@@ -50,9 +50,9 @@ def _store_head(node):
     return "o> " if node.negated else "> "
 
 
-def _render_assign(node):
+def _render_assign(node, drawn):
     chars = charset.active()
-    source = _render(node.source) if node.source is not None else Block([""], 0)
+    source = _render(node.source, drawn) if node.source is not None else Block([""], 0)
     lines = source.padded(source.width)
     head = _store_head(node)
     tail = chars["H"] * 3 + head + (node.label or "?")
@@ -87,11 +87,11 @@ def _is_wired(source):
     return not (isinstance(source, Signal) and not source.label)
 
 
-def _render_call(call, read_pin=None):
+def _render_call(call, read_pin, drawn):
     chars = charset.active()
     input_blocks = []
     for _pin, source in call.inputs:
-        input_blocks.append(_render(source) if source is not None else Block([""], 0))
+        input_blocks.append(_render(source, drawn) if source is not None else Block([""], 0))
 
     left_lines, pin_rows = stack(input_blocks)
     # A minimum lead-in, so a source exactly as wide as the column still shows
@@ -205,16 +205,45 @@ def _render_call(call, read_pin=None):
     return Block(lines, connect_row, pin_rows)
 
 
-def _render(node):
-    if isinstance(node, OutputRef):
-        # One box, entered on the pin this wire reads.
-        return _render_call(node.call, node.pin)
-    if isinstance(node, Call):
-        return _render_call(node)
+def _reference(call, pin):
+    """The name of a box already drawn in this network, on the pin being read.
+
+    Only an instance can be referred to this way: an operator has no name to
+    print, and being stateless it costs nothing to draw again.
+    """
+    if not call.instance_name:
+        return None
+    text = call.instance_name + "." + pin if pin else call.instance_name
+    if pin in call.negated_outputs:
+        text = "NOT " + text
+    return text
+
+
+def _render(node, drawn):
+    """Draw one tree. ``drawn`` holds the boxes this network has already shown.
+
+    A block read by two of the network's outputs is one block that runs once.
+    Where both readers hang straight off it the fan-out draws it once and
+    branches, but a reader sitting behind another box is a tree of its own,
+    and drawing that tree from scratch put a second copy of the same instance
+    on the page - two timers where the program has one. The first tree to
+    reach a box draws it; the rest name the pin they read, exactly as the
+    ladder renderer does.
+    """
+    call = node.call if isinstance(node, OutputRef) else node
+    if isinstance(call, Call):
+        pin = node.pin if isinstance(node, OutputRef) else call.active_output
+        if id(call) in drawn:
+            reference = _reference(call, pin)
+            if reference is not None:
+                return Block([reference], 0)
+        else:
+            drawn.add(id(call))
+        return _render_call(call, pin, drawn)
     if isinstance(node, Assign):
-        return _render_assign(node)
+        return _render_assign(node, drawn)
     if isinstance(node, Jump):
-        return _render_jump(node)
+        return _render_jump(node, drawn)
     if isinstance(node, Label):
         return _render_label(node)
     if isinstance(node, Signal):
@@ -261,14 +290,14 @@ def _fanout_groups(source, outputs):
     return groups
 
 
-def _render_fanout(outputs):
+def _render_fanout(outputs, drawn):
     """One source driving several outputs: draw it once and branch.
 
     This is how CODESYS shows it, and drawing the box once per output would
     both misrepresent the program and double the width of the diff.
     """
     chars = charset.active()
-    source = _render(outputs[0].source)
+    source = _render(outputs[0].source, drawn)
     # A short lead before the junction, so the branch is not welded to the box
     # edge. padded() extends the wire row and pads the rest with spaces.
     width = source.width + 2
@@ -329,13 +358,16 @@ def _shared_source(outputs):
 def render_network(network):
     """Render one network, which may drive several outputs from one source."""
     outputs = getattr(network, "outputs", [network])
+    # Per network: a box drawn for one output must not be drawn again for the
+    # next, but a box shared between two networks is two boxes on the page.
+    drawn = set()
 
     if _shared_source(outputs) is not None:
-        return _render_fanout(outputs).lines
+        return _render_fanout(outputs, drawn).lines
 
     lines = []
     for tree in outputs:
-        lines.extend(_render(tree).lines)
+        lines.extend(_render(tree, drawn).lines)
         # An EXECUTE box's body is the logic; drawing the box without it would
         # be an empty rectangle where a dozen lines of ST should be.
         if isinstance(tree, Call) and tree.st_code:

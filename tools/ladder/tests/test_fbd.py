@@ -379,6 +379,30 @@ check("two pins: ET leaves on its own row", any(l.rstrip().endswith("> tEt") and
 check("two pins: no junction between different pins", not any(U["T_DOWN"] in l and "xQ" in l for l in two_pins_art))
 
 
+# --- one box read by two of a network's outputs ------------------------------
+
+# Where both readers hang straight off the box the fan-out draws it once and
+# branches. A reader sitting behind another box is a tree of its own, and
+# drawing that tree from scratch put a second copy of the same instance on the
+# page - two timers where the program has one. This is FB_TESTING network 9 in
+# the GraphicalTesting project.
+SHARED_BOX = os.path.join(HERE, "fixtures", "fbd_shared_box.plcopen.xml")
+shared = parse_fbd.parse_pous(SHARED_BOX)[0]
+shared_st = st_render.render_pou(shared)
+shared_art = fbd_render.render_network(shared.networks[0])
+
+check_equal("shared box: one network", len(shared.networks), 1)
+check_equal("shared box: two outputs", len(shared.networks[0].outputs), 2)
+check_equal("shared box: the timer is called once", len([l for l in shared_st if l.startswith("fbTimer(")]), 1)
+check_equal("shared box: one box is drawn", len([l for l in shared_art if "fbTimer : TON" in l]), 1)
+check("shared box: the second reader names the pin", any(l.startswith("fbTimer.Q") for l in shared_art))
+check("shared box: both stores are still made", "xDone := fbTimer.Q;" in shared_st and "xAny := fbTimer.Q OR xManual;" in shared_st)
+
+# An operator has no instance name to refer to, and being stateless it costs
+# nothing to draw again - so it is not collapsed.
+check("shared box: the operator is still drawn", any("Out1" in l for l in shared_art))
+
+
 # --- a store that holds: set and reset ---------------------------------------
 
 # storage="set" on an outVariable was dropped, so a latch rendered as
