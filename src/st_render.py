@@ -114,7 +114,7 @@ def rung_to_statements(rung):
             else:
                 statements.append("(* JMP %s *)" % target)
         elif isinstance(item, Element) and item.kind == LABEL:
-            statements.append("(* label: %s *)" % (item.label or "?"))
+            statements.append("%s:" % (item.label or "?"))
         else:
             text = expr_to_text(item)
             if text:
@@ -219,7 +219,7 @@ def _fbd_value(node, statements, emitted=None):
         return node.text
 
     if isinstance(node, Label):
-        statements.append("(* label: %s *)" % node.name)
+        statements.append("%s:" % node.name)
         return ""
 
     if isinstance(node, Jump):

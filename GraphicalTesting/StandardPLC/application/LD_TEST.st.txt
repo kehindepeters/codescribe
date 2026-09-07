@@ -28,5 +28,5 @@ CTU_0(CU := TON_0.Q, RESET := PowerOff, PV := 10);
 IF CTU_0.Q THEN PowerOff := FALSE; END_IF
 
 (* Network 4 *)
-(* label: TestJump *)
+TestJump:
 (* empty network *)

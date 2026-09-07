@@ -210,7 +210,10 @@ check_equal("fidelity: all seven rungs survive", len(fidelity_pou.rungs), 7)
 check("fidelity: jump target is drawn", any(">>SKIP" in line for line in fidelity_art))
 check("fidelity: guarded jump reaches ST", any("IF xGo THEN (* JMP SKIP *) END_IF" in line for line in fidelity_st))
 check("fidelity: label is drawn", any("SKIP:" in line for line in fidelity_art))
-check("fidelity: label reaches ST", any("(* label: SKIP *)" in line for line in fidelity_st))
+# A jump target is program structure, not documentation: it is written the
+# way ST writes it, and not inside the delimiters this file uses for comments.
+check("fidelity: label reaches ST", "SKIP:" in fidelity_st)
+check("fidelity: the label is not dressed as a comment", not any("(* label" in line for line in fidelity_st + fidelity_art))
 
 # model.Signal's docstring warns that dropping negated inverts the logic; the
 # LD block-pin path did exactly that.

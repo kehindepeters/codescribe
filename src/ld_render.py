@@ -63,8 +63,9 @@ def network_headers(number, network):
     if label:
         # CODESYS keeps the label on the network; PLCopen exports it as a
         # loose element, so it is only known here when the native export has
-        # been read.
-        lines.append("(* label: " + label + " *)")
+        # been read. Written as ST writes it - a jump target is program
+        # structure, and inside (* *) it would read as a comment.
+        lines.append(label + ":")
     note = getattr(network, "note", None)
     if note:
         lines.append("(* " + note + " *)")

@@ -241,7 +241,8 @@ check("flow: the label heads the network it labels", isinstance(flow.networks[2]
 check("flow: the guard network is not dropped", any("JMP END" in line for line in flow_st))
 check("flow: the jump condition is kept", any("Mode.Current = Mode.ESTOP" in line for line in flow_st))
 check("flow: the jump target is drawn", any(">> END" in line for line in flow_art))
-check("flow: the label is shown", any("(* label: END *)" in line for line in flow_st))
+check("flow: the label is shown", "END:" in flow_st)
+check("flow: the label is not dressed as a comment", not any("(* label" in line for line in flow_st + flow_art))
 
 # negated="true" on an inVariable inverts the logic if it is ignored.
 guard = flow.networks[0].outputs[0]

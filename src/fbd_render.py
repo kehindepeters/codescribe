@@ -20,7 +20,10 @@ def _render_signal(node):
 
 
 def _render_label(node):
-    return Block(["(* label: " + node.name + " *)"], 0)
+    # "NAME:" is how a label is written in ST, and how the ladder renderer
+    # already draws one. Inside (* *) it reads as documentation, which is the
+    # one thing a jump target is not.
+    return Block([node.name + ":"], 0)
 
 
 def _render_jump(node, drawn, subs=None):
