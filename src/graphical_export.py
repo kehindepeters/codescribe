@@ -3,22 +3,17 @@
 
 Graphical POUs (LD, FBD, SFC, CFC) have no textual implementation, so they
 export as CODESYS native xml, which git can store but nobody can review. This
-adds two derived files next to it: a ".txt" holding the declaration and a
-diagram per network, and a ".st.txt" holding the same networks as equivalent
-Structured Text.
+adds a derived ".txt" next to it: the declaration, and a diagram per network.
 
-Two files rather than one, because one file holding both was worse: the same
-network twice, in two notations, one after the other. Separately, each is
-read for what it is good at - the diagram for the shape, the ST for the exact
-logic, which is where a diagram can only approximate. A block read through
-two of its pins is the clearest case: the ST says one call, and no
-single-wire diagram can.
+An equivalent-ST rendering of the same networks exists in st_render, and it
+says things a single-wire diagram cannot - a block read through two of its
+output pins is one call. The export does not write one; tools/ladder/write_st.py
+does, on demand, and its docstring says how to put it back on this path.
 
-Both are READ-ONLY as far as CODESCRIBE is concerned. The native xml stays
-the only thing Import From Files reads, so the round trip is unaffected and
-editing either achieves nothing. import_from_files dispatches on ".xml" and
-".st", and os.path.splitext sees ".txt" for both of these, so both are
-ignored by construction.
+The ".txt" is READ-ONLY as far as CODESCRIBE is concerned. The native xml
+stays the only thing Import From Files reads, so the round trip is unaffected
+and editing the ".txt" achieves nothing. import_from_files dispatches on
+".xml" and ".st", so a ".txt" is ignored by construction.
 
 The rendering goes through PLCopen xml rather than the native format, because
 PLCopen has a published schema for graphical bodies while the native format

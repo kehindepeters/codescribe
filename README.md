@@ -95,7 +95,7 @@ CODESYS leaves out of the PLCopen export every network that carries no elements:
 
 If the two cannot be lined up, the file says so at the top and falls back to numbering in export order, rather than showing numbers that quietly disagree with the editor.
 
-To render an exported PLCopen file by hand, to get plain ASCII instead of box drawing, or to see the equivalent Structured Text (which the export does not write, since showing each network twice in two notations reads worse than showing it once):
+To render an exported PLCopen file by hand, to get plain ASCII instead of box drawing, or to print the equivalent Structured Text the export does not write:
 
 ```
 python tools/ladder/render.py --charset ascii MyPou.xml
