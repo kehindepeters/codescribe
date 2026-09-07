@@ -17,6 +17,7 @@ from model import (
     RAILS,
     RETURN,
     RIGHT_RAIL,
+    TITLE,
     CONTACT,
     COIL,
     Element,
@@ -26,6 +27,7 @@ from model import (
     Parallel,
     Pou,
     Series,
+    assemble_networks,
     component_finder,
     is_simple_term,
     parallel,
@@ -43,13 +45,17 @@ from plcopen import (
     is_true,
     iter_bodies,
     negated_output_pins,
+    network_title,
     parse_interface,
     stored_output_pins,
     tag,
 )
 
+VENDOR_ELEMENT = "vendorElement"
+
 # Elements that carry logic. Rails are structural: they anchor a rung but draw
-# nothing themselves.
+# nothing themselves; a comment and a network title carry no logic either, but
+# both head the network they precede.
 KNOWN_KINDS = (
     LEFT_RAIL,
     RIGHT_RAIL,
@@ -62,6 +68,7 @@ KNOWN_KINDS = (
     RETURN,
     LABEL,
     COMMENT,
+    VENDOR_ELEMENT,
 )
 
 
@@ -90,9 +97,14 @@ def parse_ld_body(body_elem):
 
         if kind == COMMENT:
             # No logic of its own, but CODESYS writes one above each network
-            # that has a comment, which is the only thing in an LD body that
-            # says where one network ends and the next begins.
+            # that has a comment, and it names the network that follows it.
             nodes.append(Node(local_id=local_id, kind=COMMENT, label=comment_text(child)))
+            continue
+
+        if kind == VENDOR_ELEMENT:
+            title = network_title(child)
+            if title is not None:
+                nodes.append(Node(local_id=local_id, kind=TITLE, label=title))
             continue
 
         is_block = kind == BLOCK
@@ -378,7 +390,7 @@ def build_networks(nodes):
     for node in nodes:
         by_id[node.local_id] = node
 
-    logic = [node for node in nodes if node.kind not in RAILS and node.kind != COMMENT]
+    logic = [node for node in nodes if node.kind not in RAILS and node.kind not in (COMMENT, TITLE)]
     known = set(node.local_id for node in logic)
     find = component_finder(logic)
 
@@ -406,23 +418,33 @@ def build_networks(nodes):
     # block belongs to one network, so this cannot leak across networks.
     drawn = set()
 
-    order = []
     rungs_by_root = {}
     for node in nodes:
-        if node.local_id in consumed or node.kind in (LEFT_RAIL, COMMENT):
+        if node.local_id in consumed or node.kind in (LEFT_RAIL, COMMENT, TITLE):
             # An unconnected left rail is an empty rung, not a terminal.
             continue
         expr = _build_expr(node, by_id, set(), None, drawn)
         if isinstance(expr, Empty):
             # An unconnected rail or a stray element with nothing on it.
             continue
-        root = root_of(node)
-        if root not in rungs_by_root:
-            rungs_by_root[root] = []
-            order.append(root)
-        rungs_by_root[root].append(expr)
+        rungs_by_root.setdefault(root_of(node), []).append(expr)
 
-    return [Network(comment="", outputs=rungs_by_root[root]) for root in order]
+    # A component that is nothing but a jump label is the label of the network
+    # that follows it, not a network of its own.
+    label_roots = set()
+    for root, rungs in rungs_by_root.items():
+        if rungs and all(isinstance(rung, Element) and rung.kind == LABEL for rung in rungs):
+            label_roots.add(root)
+
+    def network_root(node):
+        if node.kind == LEFT_RAIL:
+            return None
+        return root_of(node)
+
+    return [
+        Network(comment=comment, title=title, outputs=rungs)
+        for comment, title, rungs in assemble_networks(nodes, network_root, rungs_by_root, label_roots)
+    ]
 
 
 LANGUAGE = "LD"

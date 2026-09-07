@@ -11,7 +11,7 @@ power flow, so the condition carries on past it, which reads oddly in ST but
 matches what the rung does.
 """
 
-from ld_render import render_declaration
+from ld_render import network_headers, render_declaration
 from model import (
     BLOCK,
     COIL,
@@ -276,14 +276,6 @@ def network_to_statements(network):
     return statements
 
 
-def _network_header(index, comment):
-    header = "(* Network " + str(index + 1)
-    if comment:
-        comment = comment.replace("\r", " ").replace("\n", " ").replace("*)", "* )")
-        header += ": " + comment.lstrip("/").strip()
-    return header + " *)"
-
-
 LD = "LD"
 
 
@@ -297,7 +289,7 @@ def render_pou(pou):
     lines.append("")
 
     for index, network in enumerate(pou.networks):
-        lines.append(_network_header(index, network.comment))
+        lines.extend(network_headers(index + 1, network))
         if pou.language == LD:
             for rung in network.outputs:
                 lines.extend(rung_to_statements(rung))

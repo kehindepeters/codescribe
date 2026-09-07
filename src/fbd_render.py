@@ -11,7 +11,7 @@ from __future__ import unicode_literals
 
 import charset
 from layout import Block, stack
-from ld_render import render_declaration
+from ld_render import network_headers, render_declaration
 from model import Assign, Call, Jump, Label, OutputRef, Signal
 
 
@@ -352,11 +352,7 @@ def render_pou(pou):
         lines.append("(* no networks *)")
 
     for index, network in enumerate(pou.networks):
-        header = "(* Network " + str(index + 1)
-        if network.comment:
-            comment = network.comment.replace("\r", " ").replace("\n", " ").replace("*)", "* )")
-            header += ": " + comment.lstrip("/").strip()
-        lines.append(header + " *)")
+        lines.extend(network_headers(index + 1, network))
         lines.extend(render_network(network))
         lines.append("")
 

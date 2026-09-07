@@ -30,6 +30,34 @@ POU_TYPE_KEYWORDS = {
 }
 
 
+def _one_line(text):
+    """Comment text safe to put inside a generated (* *) block.
+
+    A comment can span lines and can contain "*)", either of which would
+    terminate the block early and leave the rest of it as code.
+    """
+    return text.replace("\r", " ").replace("\n", " ").replace("*)", "* )")
+
+
+def network_headers(number, network):
+    """The header lines above one network: its number, comment and title.
+
+    CODESYS keeps a network's title separately from its comment and draws it
+    above one, so it gets a line of its own rather than being folded into the
+    comment - a network can carry either, both or neither, and the title is
+    often the only description there is.
+    """
+    header = "(* Network " + str(number)
+    comment = _one_line(network.comment or "").lstrip("/").strip()
+    if comment:
+        header += ": " + comment
+    lines = [header + " *)"]
+    title = _one_line(getattr(network, "title", "") or "").lstrip("/").strip()
+    if title:
+        lines.append("(* title: " + title + " *)")
+    return lines
+
+
 def _symbol_and_label(element):
     """The drawn symbol, and the caption sitting above it."""
     chars = charset.active()
@@ -345,7 +373,7 @@ def render_pou(pou):
         lines.append("(* no rungs *)")
 
     for index, network in enumerate(pou.networks):
-        lines.append("(* Network " + str(index + 1) + " *)")
+        lines.extend(network_headers(index + 1, network))
         for rung in network.outputs:
             lines.extend(render_rung(rung))
         lines.append("")

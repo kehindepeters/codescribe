@@ -42,6 +42,9 @@ LABEL = "label"
 # Carries no logic, but CODESYS writes one above each network that has a
 # comment, so it marks where one network begins.
 COMMENT = "comment"
+# The network's title, exported as a vendorElement. Also a header, also a
+# boundary, and often the only description a network carries.
+TITLE = "networktitle"
 
 RAILS = (LEFT_RAIL, RIGHT_RAIL)
 
@@ -142,6 +145,58 @@ def component_finder(nodes):
             if left != right:
                 parent[left] = right
     return find
+
+
+def assemble_networks(nodes, root_of, outputs_by_root, label_roots=()):
+    """Order the components of a body into networks, in editor order.
+
+    Returns [(comment, title, [outputs])]. Three things decide where a
+    network begins and what it is called:
+
+    * A comment or a title element is a header, and heads the network whose
+      elements follow it. A second one of either means the header before it
+      headed a network of its own - a network holding nothing but
+      documentation. Dropping those silently renumbered every network after
+      them, so a reviewer opening "Network 5" in CODESYS read different logic
+      under "(* Network 5 *)" in the file.
+    * A header is not a reliable boundary on its own: CODESYS writes no
+      comment element for a network that has none. Connectivity is what
+      separates networks; the header only names the one it precedes.
+    * A jump label is stored on the network in CODESYS but exported as a
+      free-standing element just before it, so it arrives as a component of
+      its own. It belongs to the network that follows it.
+    """
+    label_roots = set(label_roots)
+    networks = []
+    header = [None, None]
+    carried = []
+    seen = set()
+
+    for node in nodes:
+        if node.kind in (COMMENT, TITLE):
+            index = 0 if node.kind == COMMENT else 1
+            if header[index] is not None:
+                networks.append((header[0] or "", header[1] or "", list(carried)))
+                del carried[:]
+                header = [None, None]
+            header[index] = node.label or ""
+            continue
+
+        root = root_of(node)
+        if root is None or root in seen or root not in outputs_by_root:
+            continue
+        seen.add(root)
+        if root in label_roots:
+            carried.extend(outputs_by_root[root])
+            continue
+
+        networks.append((header[0] or "", header[1] or "", carried + outputs_by_root[root]))
+        del carried[:]
+        header = [None, None]
+
+    if header[0] is not None or header[1] is not None or carried:
+        networks.append((header[0] or "", header[1] or "", list(carried)))
+    return networks
 
 
 class Variable(object):
@@ -333,12 +388,15 @@ class Network(object):
     with the editor, which is what a reviewer compares against.
     """
 
-    def __init__(self, comment="", outputs=None):
+    def __init__(self, comment="", outputs=None, title=""):
         self.comment = comment
+        # CODESYS keeps a network's title separately from its comment, and
+        # draws it above one. A network can carry either, both or neither.
+        self.title = title
         self.outputs = outputs if outputs is not None else []
 
     def __repr__(self):
-        return "Network(%r, %d outputs)" % (self.comment, len(self.outputs))
+        return "Network(%r, %r, %d outputs)" % (self.comment, self.title, len(self.outputs))
 
 
 class Assign(object):

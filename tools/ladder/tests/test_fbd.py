@@ -24,7 +24,7 @@ import fbd_render  # noqa: E402
 import parse_ld  # noqa: E402
 import parse_fbd  # noqa: E402
 import st_render  # noqa: E402
-from model import Call, Network, OutputRef, Pou, Signal  # noqa: E402
+from model import Call, Label, Network, OutputRef, Pou, Signal  # noqa: E402
 from render import write  # noqa: E402
 
 # Referenced through the charset table rather than as literal glyphs: this
@@ -100,8 +100,19 @@ check_equal(
 )
 check_equal(
     "ST network comments cannot break generated block comments",
-    st_render._network_header(0, hostile_comment),
+    st_render.render_pou(Pou("HOSTILE", "program", networks=[Network(hostile_comment, [Signal("x")])]))[2],
     "(* Network 1: first second * ) third *)",
+)
+
+# A title is a second field, and can break the block comment just as a
+# comment can.
+hostile_title = "one *) two"
+check_equal(
+    "network titles cannot break generated block comments",
+    fbd_render.render_pou(
+        Pou("HOSTILE", "program", networks=[Network("", [Signal("x")], title=hostile_title)])
+    )[3],
+    "(* title: one * ) two *)",
 )
 
 check("network 1 is a call", isinstance(tree1, Call))
@@ -206,7 +217,12 @@ flow = parse_fbd.parse_pous(CONTROL_FLOW)[0]
 flow_st = st_render.render_pou(flow)
 flow_art = fbd_render.render_pou(flow)
 
-check_equal("flow: four networks survive", len(flow.networks), 4)
+# Three, not four: CODESYS stores a jump label on the network it labels, but
+# PLCopen exports it as a free-standing element just before that network, so
+# it arrives wired to nothing. Counting it as a network of its own put the
+# label under its own number and pushed every later number out by one.
+check_equal("flow: three networks survive", len(flow.networks), 3)
+check("flow: the label heads the network it labels", isinstance(flow.networks[2].outputs[0], Label))
 
 # A jump terminates a network. Leaving it out of SINK_KINDS dropped the entire
 # guard network, because nothing else consumed the OR feeding it.
@@ -222,7 +238,7 @@ check_equal("flow: negation renders", box(guard.condition).inputs[0][1].text, "N
 check("flow: negation survives into ST", any("(NOT xInitDone) OR" in line for line in flow_st))
 
 # An EXECUTE box is nothing but inline ST; drawing the box alone loses it all.
-execute = flow.networks[3].outputs[0]
+execute = flow.networks[2].outputs[1]
 check_equal("flow: inline ST is captured", len(execute.st_code), 4)
 check("flow: inline ST reaches the ST output", any("Status.Faulted := FALSE;" in line for line in flow_st))
 # The EN pin genuinely guards the box, so it has to show up as a condition
@@ -405,6 +421,40 @@ check_equal("pin edge: the edge reaches the tree", box(pin_edge.networks[0].outp
 check("pin edge: the ST shows the trigger", "ctr(CU := R(xPulse), RESET := xRst);" in pin_edge_st)
 check("pin edge: the diagram marks the pin", any("R(xPulse)" in line for line in pin_edge_art))
 check("pin edge: an unmarked pin stays unmarked", not any("R(xRst)" in line for line in pin_edge_st))
+
+
+# --- a network that holds only a comment -------------------------------------
+
+# A network with no logic in it was dropped, and its comment then attached to
+# the next network - so the file showed one network numbered 1 carrying the
+# second network's comment. Every number after a dropped network is wrong,
+# and a reviewer opening "Network 5" in CODESYS reads different logic under
+# "(* Network 5 *)" in the file.
+COMMENT_ONLY = os.path.join(HERE, "fixtures", "36-6-fbd-comment-only-network.xml")
+comment_only = parse_fbd.parse_pous(COMMENT_ONLY)[0]
+comment_only_art = fbd_render.render_pou(comment_only)
+
+check_equal("comment-only: two networks", len(comment_only.networks), 2)
+check_equal("comment-only: the first has no logic", len(comment_only.networks[0].outputs), 0)
+check(
+    "comment-only: the first keeps its own comment",
+    comment_only.networks[0].comment.startswith("// Section header: E-STOP CHAIN"),
+)
+check_equal("comment-only: the second keeps its own", comment_only.networks[1].comment, "// second network comment")
+check_equal(
+    "comment-only: the numbering follows the editor",
+    [line for line in comment_only_art if line.startswith("(* Network")],
+    [
+        "(* Network 1: Section header: E-STOP CHAIN (documentation-only network) *)",
+        "(* Network 2: second network comment *)",
+    ],
+)
+
+# The title is a second field CODESYS draws above the comment, and can be the
+# only description a network has. It was skipped with the rest of the
+# vendorElements.
+check_equal("comment-only: titles are read", comment_only.networks[0].title, "Title of network one")
+check("comment-only: titles are rendered", "(* title: Title of network one *)" in comment_only_art)
 
 
 # --- language dispatch -----------------------------------------------------

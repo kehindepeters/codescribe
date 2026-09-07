@@ -10,6 +10,7 @@ from model import (
     BLOCK,
     COMMENT,
     EDGE_FUNCTION,
+    TITLE,
     Assign,
     Call,
     Jump,
@@ -19,6 +20,7 @@ from model import (
     OutputRef,
     Pou,
     Signal,
+    assemble_networks,
     component_finder,
 )
 from plcopen import (
@@ -34,6 +36,7 @@ from plcopen import (
     is_true,
     iter_bodies,
     negated_output_pins,
+    network_title,
     parse_interface,
     stored_output_pins,
     tag,
@@ -47,9 +50,22 @@ RETURN = "return"
 CONNECTOR = "connector"
 CONTINUATION = "continuation"
 
-# vendorElement carries CODESYS editor state (network titles, implementation
-# attributes) and holds no logic, so it is skipped entirely.
-FBD_KINDS = (BLOCK, IN_VARIABLE, OUT_VARIABLE, COMMENT, JUMP, RETURN, LABEL, CONTINUATION, CONNECTOR)
+VENDOR_ELEMENT = "vendorElement"
+
+# A vendorElement carries CODESYS editor state and mostly holds no logic - but
+# a network title is one, and a title heads a network just as a comment does.
+FBD_KINDS = (
+    BLOCK,
+    IN_VARIABLE,
+    OUT_VARIABLE,
+    COMMENT,
+    JUMP,
+    RETURN,
+    LABEL,
+    CONTINUATION,
+    CONNECTOR,
+    VENDOR_ELEMENT,
+)
 
 # Elements that can terminate a network. A jump or return ends one just as
 # surely as an assignment does - leaving them out drops the entire guard
@@ -72,6 +88,12 @@ def parse_fbd_body(body_elem):
 
         if kind == COMMENT:
             nodes.append(Node(local_id=local_id, kind=COMMENT, label=comment_text(child)))
+            continue
+
+        if kind == VENDOR_ELEMENT:
+            title = network_title(child)
+            if title is not None:
+                nodes.append(Node(local_id=local_id, kind=TITLE, label=title))
             continue
 
         is_block = kind == BLOCK
@@ -228,7 +250,7 @@ def build_networks(nodes):
     networks with the whole shared expression written out twice, and threw the
     numbering out against what a reviewer sees in CODESYS.
     """
-    logic = [node for node in nodes if node.kind != COMMENT]
+    logic = [node for node in nodes if node.kind not in (COMMENT, TITLE)]
 
     by_id = {}
     for node in logic:
@@ -241,35 +263,29 @@ def build_networks(nodes):
         for connection in node.inputs:
             consumed.add(connection.ref_id)
 
-    # A comment applies to the component whose first element follows it.
-    comments = {}
-    pending = ""
-    for node in nodes:
-        if node.kind == COMMENT:
-            pending = node.label or ""
-            continue
-        root = find(node.local_id)
-        if root not in comments:
-            comments[root] = pending
-            pending = ""
-
     # Shared upstream nodes must come back as the same object, so the
     # renderers can tell a fan-out from two coincidentally equal expressions.
     memo = {}
-    networks = []
-    by_root = {}
+    outputs_by_root = {}
     for node in logic:
         if node.local_id in consumed or node.kind not in SINK_KINDS:
             continue
-        tree = _build(node, by_id, set(), None, memo)
-        root = find(node.local_id)
-        if root in by_root:
-            by_root[root].outputs.append(tree)
-        else:
-            network = Network(comment=comments.get(root, ""), outputs=[tree])
-            by_root[root] = network
-            networks.append(network)
-    return networks
+        outputs_by_root.setdefault(find(node.local_id), []).append(_build(node, by_id, set(), None, memo))
+
+    # A component that is nothing but a jump label is the label of the network
+    # that follows it, not a network of its own.
+    label_roots = set()
+    for root, outputs in outputs_by_root.items():
+        if outputs and all(isinstance(tree, Label) for tree in outputs):
+            label_roots.add(root)
+
+    def root_of(node):
+        return find(node.local_id) if node.local_id in by_id else None
+
+    return [
+        Network(comment=comment, title=title, outputs=outputs)
+        for comment, title, outputs in assemble_networks(nodes, root_of, outputs_by_root, label_roots)
+    ]
 
 
 LANGUAGE = "FBD"

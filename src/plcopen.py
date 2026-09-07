@@ -199,6 +199,35 @@ def comment_text(elem):
     return xhtml.text.strip()
 
 
+# CODESYS stores a network's title as a vendorElement of this element type,
+# with the text in alternativeText rather than in a content element.
+NETWORK_TITLE = "networktitle"
+
+
+def network_title(elem):
+    """The title text of a network-title vendorElement, else None.
+
+    A vendorElement is CODESYS editor state and most of them hold no logic,
+    but this one holds the network's title - which is often the only
+    description a network has, and marks where a network begins even when it
+    has no comment.
+    """
+    is_title = False
+    for child in elem.iter():
+        if tag(child) == "ElementType" and (child.text or "").strip() == NETWORK_TITLE:
+            is_title = True
+            break
+    if not is_title:
+        return None
+    alternative = find_child(elem, "alternativeText")
+    if alternative is None:
+        return ""
+    xhtml = find_child(alternative, "xhtml")
+    if xhtml is None or xhtml.text is None:
+        return ""
+    return xhtml.text.strip()
+
+
 # --- interface -------------------------------------------------------------
 
 SCOPE_TAGS = {

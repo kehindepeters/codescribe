@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(HERE, ".."))
 
 import charset  # noqa: E402
 from ld_render import render_declaration, render_pou  # noqa: E402
-from model import COIL, CONTACT, Element, Parallel, Series  # noqa: E402
+from model import COIL, CONTACT, LABEL, Element, Parallel, Series  # noqa: E402
 from parse_ld import parse_pous  # noqa: E402
 from render import write  # noqa: E402
 
@@ -323,6 +323,50 @@ check("ld pin edge: an unmarked pin stays unmarked", not any("R(xRst)" in line f
 # the ST, same letter in the diagram.
 check("ld pin edge: a contact still triggers", "xEdge := R(xA);" in pin_edge_st)
 check("ld pin edge: a contact still draws its P", any(U["CONTACT_L"] + "P" + U["CONTACT_R"] in line for line in pin_edge_art))
+
+
+# --- network comments, and a network that holds only one ---------------------
+
+# An LD network's comment never reached its header: the parser did not know
+# the element existed, so every header read a bare "(* Network n *)".
+LD_COMMENT = os.path.join(FIXTURES, "36-6-ld-comment.xml")
+ld_comment_pou = parse_pous(LD_COMMENT)[0]
+ld_comment_art = render_pou(ld_comment_pou)
+
+check_equal("ld comment: two networks", len(ld_comment_pou.networks), 2)
+check_equal("ld comment: the comment is read", ld_comment_pou.networks[1].comment, "XXX - WARNING: Timer then counter")
+check("ld comment: it reaches the header", "(* Network 2: XXX - WARNING: Timer then counter *)" in ld_comment_art)
+
+# A network holding nothing but a comment was dropped, and every network after
+# it renumbered.
+LD_EMPTY = os.path.join(FIXTURES, "36-6-ld-empty-network.xml")
+ld_empty_pou = parse_pous(LD_EMPTY)[0]
+ld_empty_art = render_pou(ld_empty_pou)
+
+check_equal("ld empty: three networks", len(ld_empty_pou.networks), 3)
+check_equal("ld empty: the middle one has no rungs", len(ld_empty_pou.networks[1].outputs), 0)
+check_equal(
+    "ld empty: the numbering follows the editor",
+    [line for line in ld_empty_art if line.startswith("(* Network")],
+    ["(* Network 1 *)", "(* Network 2: SECTION: safety interlocks *)", "(* Network 3 *)"],
+)
+# A header with nothing under it: the number is occupied, the body is empty,
+# and the next network carries the next number.
+empty_at = ld_empty_art.index("(* Network 2: SECTION: safety interlocks *)")
+check_equal("ld empty: the comment-only network has no body", ld_empty_art[empty_at + 1], "")
+check_equal("ld empty: Network 3 follows it", ld_empty_art[empty_at + 2], "(* Network 3 *)")
+check_equal("ld empty: and holds the timer", len(ld_empty_pou.networks[2].outputs), 1)
+
+# A jump label is stored on its network in CODESYS but exported just before
+# it, wired to nothing. Counting it as a network of its own put it under a
+# number of its own and pushed every later number out by one.
+check_equal("fidelity: six networks, not seven", len(fidelity_pou.networks), 6)
+check_equal("fidelity: the label joins the network it labels", len(fidelity_pou.networks[1].outputs), 2)
+check(
+    "fidelity: the label is drawn above that network",
+    isinstance(fidelity_pou.networks[1].outputs[0], Element)
+    and fidelity_pou.networks[1].outputs[0].kind == LABEL,
+)
 
 # A negated wired output feeding a coil, and only one bubble drawn for it.
 check("fidelity: negated wired output inverts the coil", any("xFin := NOT ctr2.Q;" in line for line in fidelity_st))
