@@ -114,17 +114,36 @@ try:
 
     content = read(base + ".txt")
     check("derived file leads with the declaration", content.startswith("PROGRAM LD_TEST"))
-    # Diagram only. Rendering the same network twice, once as ST and once as a
-    # diagram, made the files harder to read rather than easier.
-    check("no ST rendering is written", "IF CTU_0.Q THEN PowerOff := FALSE; END_IF" not in content)
+    # The diagram file holds the diagram. The two notations were written into
+    # one file at first and that was worse, not better: the same network twice,
+    # one rendering after the other, is harder to read than either alone.
+    check("no ST rendering in the diagram file", "IF CTU_0.Q THEN PowerOff := FALSE; END_IF" not in content)
     check("networks are numbered", "(* Network 1 *)" in content)
     check("derived file contains the diagram", "TON_0 : TON" in content)
     check("the declaration appears once", content.count("END_VAR") == 1)
     check("derived file ends with a newline", content.endswith("\n"))
 
+    # --- the ST rendering, in a file of its own -----------------------------
+
+    st_content = read(base + ".st.txt")
+    check("ST file lands beside the diagram", os.path.exists(base + ".st.txt"))
+    # It reads like source and sits next to real .st exports, so the file has
+    # to say what it is before it says anything else.
+    check("ST file opens with the read-only banner", st_content.startswith("(* Equivalent Structured Text"))
+    check("the banner forbids importing it", "must never be imported" in st_content)
+    check("ST file carries the declaration", "PROGRAM LD_TEST" in st_content)
+    check("ST file states the logic", "IF CTU_0.Q THEN PowerOff := FALSE; END_IF" in st_content)
+    check("ST file is numbered like the diagram", "(* Network 1" in st_content)
+    check("ST file has no diagram in it", "TON_0 : TON" not in st_content.replace("TON_0 : TON;", ""))
+    check("ST file ends with a newline", st_content.endswith("\n"))
+
     # The temp PLCopen file is staged outside the export folder, so nothing but
-    # the rendering may appear next to the native xml.
-    check_equal("no stray files left behind", sorted(os.listdir(workspace)), ["LD_TEST.txt"])
+    # the two renderings may appear next to the native xml.
+    check_equal(
+        "no stray files left behind",
+        sorted(os.listdir(workspace)),
+        ["LD_TEST.st.txt", "LD_TEST.txt"],
+    )
 
     # --- an older ScriptEngine without the plaintext overload ---------------
 
@@ -139,6 +158,7 @@ try:
     sfc = FakePou("SFC_TEST", os.path.join(FIXTURES, "SFCTesting.xml"))
     check("sfc reports nothing rendered", graphical_export.write_rendered_text(sfc, sfc_base) is False)
     check("sfc writes no empty file", not os.path.exists(sfc_base + ".txt"))
+    check("sfc writes no empty ST file", not os.path.exists(sfc_base + ".st.txt"))
 
     # --- cost reporting -----------------------------------------------------
 
@@ -271,6 +291,10 @@ END_VAR"""
         except Exception as error:
             check("a mid-write failure is reported, not raised", False, repr(error))
         check("a truncated rendering is not left behind", not os.path.exists(torn_base + ".txt"))
+        # Both files go, not just the one that happened to fail: a diagram
+        # with no ST beside it, or the reverse, is a rendering that disagrees
+        # with itself.
+        check("no half-written ST is left behind", not os.path.exists(torn_base + ".st.txt"))
     finally:
         graphical_export.open_utf8 = real_open_utf8
 finally:
@@ -285,7 +309,7 @@ finally:
 # derived files.
 workspace = tempfile.mkdtemp()
 try:
-    for name in ("Main.txt", "Main.Method.txt", "Main.gvl.txt"):
+    for name in ("Main.txt", "Main.Method.txt", "Main.gvl.txt", "Main.st.txt", "Main.Method.st.txt"):
         handle = io.open(os.path.join(workspace, name), "w", encoding="utf-8")
         handle.write("PROGRAM Main\n")
         handle.close()

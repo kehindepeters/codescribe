@@ -3,12 +3,22 @@
 
 Graphical POUs (LD, FBD, SFC, CFC) have no textual implementation, so they
 export as CODESYS native xml, which git can store but nobody can review. This
-adds a derived .txt next to it: the declaration and a diagram per network.
+adds two derived files next to it: a ".txt" holding the declaration and a
+diagram per network, and a ".st.txt" holding the same networks as equivalent
+Structured Text.
 
-The .txt is READ-ONLY as far as CODESCRIBE is concerned. The native xml stays
+Two files rather than one, because one file holding both was worse: the same
+network twice, in two notations, one after the other. Separately, each is
+read for what it is good at - the diagram for the shape, the ST for the exact
+logic, which is where a diagram can only approximate. A block read through
+two of its pins is the clearest case: the ST says one call, and no
+single-wire diagram can.
+
+Both are READ-ONLY as far as CODESCRIBE is concerned. The native xml stays
 the only thing Import From Files reads, so the round trip is unaffected and
-editing the .txt achieves nothing. import_from_files dispatches on ".xml" and
-".st", so a ".txt" is ignored by construction.
+editing either achieves nothing. import_from_files dispatches on ".xml" and
+".st", and os.path.splitext sees ".txt" for both of these, so both are
+ignored by construction.
 
 The rendering goes through PLCopen xml rather than the native format, because
 PLCopen has a published schema for graphical bodies while the native format
@@ -24,11 +34,26 @@ import ld_render
 import parse_fbd
 import parse_ld
 import plcopen
+import st_render
 from util import open_utf8
 
-# Suffix for the derived file. Deliberately not .st: these are not importable
-# and must never be mistaken for source.
+# Suffixes for the derived files. Deliberately not .st: these are not
+# importable and must never be mistaken for source. import_from_files
+# dispatches on ".xml" and ".st", and os.path.splitext sees ".txt" for both of
+# these, so both are ignored by construction.
 RENDERED_SUFFIX = ".txt"
+ST_SUFFIX = ".st.txt"
+
+# Stated in the file itself, not just in the docs. The ST reads like source
+# and sits next to real .st exports, so the one thing a reader must not
+# assume is that it can go back into CODESYS.
+ST_HEADER = [
+    u"(* Equivalent Structured Text for a graphical POU, written by codescribe.",
+    u"   READ ONLY. This is a rendering of the native xml beside it, not a",
+    u"   translation: it is not guaranteed to compile and must never be imported",
+    u"   or pasted back into CODESYS. The native xml is the source. *)",
+    u"",
+]
 
 # Rendering adds a second CODESYS-side export per graphical POU, so the cost
 # is worth reporting rather than leaving people to wonder why the export got
@@ -39,6 +64,7 @@ EMPTY_STATS = {
     "export_xml_seconds": 0.0,
     "parse_seconds": 0.0,
     "draw_seconds": 0.0,
+    "st_seconds": 0.0,
     "verbatim_declarations": 0,
     "fallback_declarations": 0,
 }
@@ -60,14 +86,21 @@ def summary():
     """
     if not STATS["rendered"] and not STATS["skipped"]:
         return None
-    total = STATS["export_xml_seconds"] + STATS["parse_seconds"] + STATS["draw_seconds"]
-    line = "Rendered %d graphical POUs in %.1fs (%.1fs CODESYS export_xml, %.1fs parsing, %.1fs drawing); skipped %d" % (
-        STATS["rendered"],
-        total,
-        STATS["export_xml_seconds"],
-        STATS["parse_seconds"],
-        STATS["draw_seconds"],
-        STATS["skipped"],
+    total = (
+        STATS["export_xml_seconds"] + STATS["parse_seconds"] + STATS["draw_seconds"] + STATS["st_seconds"]
+    )
+    line = (
+        "Rendered %d graphical POUs in %.1fs"
+        " (%.1fs CODESYS export_xml, %.1fs parsing, %.1fs drawing, %.1fs ST); skipped %d"
+        % (
+            STATS["rendered"],
+            total,
+            STATS["export_xml_seconds"],
+            STATS["parse_seconds"],
+            STATS["draw_seconds"],
+            STATS["st_seconds"],
+            STATS["skipped"],
+        )
     )
     # Falling back to the rebuilt declaration is silent otherwise, and it
     # costs every comment, pragma and attribute in the file. Say so.
@@ -87,6 +120,13 @@ RENDERERS = {
 }
 
 
+def _write_lines(path, lines):
+    """Write one rendering, newline-terminated, as UTF-8."""
+    with open_utf8(path, "w") as f:
+        f.write(u"\n".join(lines))
+        f.write(u"\n")
+
+
 def _render_pous(plcopen_path):
     """(pou, art_renderer) for every POU in the file we know how to draw.
 
@@ -104,14 +144,30 @@ def _render_pous(plcopen_path):
     return found
 
 
-def render_plcopen(plcopen_path, declaration_text=None):
-    """Render every renderable POU in a PLCopen file. [] if there are none.
+def _joined(blocks):
+    """One POU rendering after another, with the blank lines tidied up."""
+    lines = []
+    for block in blocks:
+        lines.extend(block)
+        lines.append(u"")
+    while lines and lines[-1] == u"":
+        lines.pop()
+    return lines
 
-    The declaration and the diagram only. An equivalent-ST rendering was
-    written alongside these at first, but showing the same network twice in
-    two notations made the files harder to read rather than easier. The ST
-    emitter is still there and reachable from tools/ladder/render.py for
-    anyone who wants it; it is just not what the export writes.
+
+def render_plcopen(plcopen_path, declaration_text=None):
+    """(diagram lines, ST lines) for a PLCopen file. ([], []) if none apply.
+
+    Two renderings of the same networks, for two files. They were written
+    into one file at first and that was worse, not better: the same network
+    twice in two notations, one after the other, is harder to read than
+    either alone. In separate files the choice stays with the reader - the
+    diagram shows the shape, and the ST states the logic exactly where the
+    diagram can only approximate it. A block read through two of its pins is
+    the clearest case: the ST says one call, and no single-wire diagram can.
+
+    The ST is a rendering, not a translation. It is not guaranteed to compile
+    and must never be fed back into CODESYS; the file says so at the top.
     """
     started = time.time()
     pous = _render_pous(plcopen_path)
@@ -120,19 +176,20 @@ def render_plcopen(plcopen_path, declaration_text=None):
     STATS["parse_seconds"] += time.time() - started
 
     started = time.time()
-    lines = []
+    drawn = []
     for pou, art_renderer in pous:
         if pou.declaration_text:
             STATS["verbatim_declarations"] += 1
         else:
             STATS["fallback_declarations"] += 1
-        lines.extend(art_renderer.render_pou(pou))
-        lines.append(u"")
-
-    while lines and lines[-1] == u"":
-        lines.pop()
+        drawn.append(art_renderer.render_pou(pou))
     STATS["draw_seconds"] += time.time() - started
-    return lines
+
+    started = time.time()
+    text = [st_render.render_pou(pou) for pou, _art_renderer in pous]
+    STATS["st_seconds"] += time.time() - started
+
+    return _joined(drawn), _joined(text)
 
 
 # Ways of asking for plaintext declarations, most likely to bind first.
@@ -207,16 +264,16 @@ def write_rendered_text(obj, base_path):
         _export_plcopen(obj, temp_path)
         STATS["export_xml_seconds"] += time.time() - started
 
-        # render_plcopen accounts for its own parse and draw time.
+        # render_plcopen accounts for its own parse, draw and ST time.
         textual_declaration = getattr(getattr(obj, "textual_declaration", None), "text", None)
-        lines = render_plcopen(temp_path, textual_declaration)
+        lines, st_lines = render_plcopen(temp_path, textual_declaration)
         if not lines:
             STATS["skipped"] += 1
             return False
 
-        with open_utf8(base_path + RENDERED_SUFFIX, "w") as f:
-            f.write(u"\n".join(lines))
-            f.write(u"\n")
+        _write_lines(base_path + RENDERED_SUFFIX, lines)
+        if st_lines:
+            _write_lines(base_path + ST_SUFFIX, ST_HEADER + st_lines)
         STATS["rendered"] += 1
         return True
     except Exception as error:
@@ -233,6 +290,7 @@ def write_rendered_text(obj, base_path):
         # A write that died halfway leaves a truncated rendering that looks
         # exactly like a valid one. No file at all is the honest outcome.
         _remove_quietly(base_path + RENDERED_SUFFIX)
+        _remove_quietly(base_path + ST_SUFFIX)
         return False
     finally:
         _remove_quietly(temp_path)

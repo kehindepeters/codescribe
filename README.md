@@ -79,6 +79,19 @@ The declaration is copied from the original CODESYS declaration source, preservi
 
 This file is **derived and read-only**. The native xml remains the only thing `Import From Files` reads, so editing the `.txt` changes nothing — it exists to make diffs and code review possible. Layout comes from how the elements are wired, not from their coordinates, so moving a block in the CODESYS editor produces no diff.
 
+Beside those two, CODESCRIBE writes a `<name>.st.txt` holding the same networks as equivalent Structured Text:
+
+```
+(* Network 2 *)
+TON_0(IN := PowerOn, PT := T#5S);
+CTU_0(CU := TON_0.Q, RESET := PowerOff, PV := 10);
+IF CTU_0.Q THEN PowerOff := FALSE; END_IF
+```
+
+The diagram shows the shape; the ST states the logic exactly, and says things a single-wire diagram cannot. A block read through two of its output pins is one call in the ST, where the diagram has to draw the box once and name it again for the second reader. The ST also diffs line by line, where renaming a variable can re-flow every line of a diagram.
+
+It is **a rendering, not a translation**: it is not guaranteed to compile, it must never be imported or pasted back into CODESYS, and the file opens with a banner saying so. Like the `.txt`, `Import From Files` ignores it — the dispatch is on `.xml` and `.st`, and both derived files end in `.txt`.
+
 SFC and CFC POUs are not yet rendered; they export as native xml alone.
 
 Networks are numbered as CODESYS numbers them, so a network in the file lines up with the one in the editor.
