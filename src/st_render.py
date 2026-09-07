@@ -51,6 +51,12 @@ def rung_to_statements(rung):
 
     for item in items:
         if isinstance(item, Element) and item.kind == BLOCK:
+            # A box wired into one of this box's side pins runs first and has
+            # inputs of its own to state. It is a sub-rung with its own power
+            # flow, so it walks the same way rather than folding into this
+            # rung's condition.
+            for pin_block in item.pin_blocks:
+                statements.extend(rung_to_statements(pin_block))
             args = []
             for pin, label in item.input_pins:
                 # A label of None is the power pin, fed by the rung so far.

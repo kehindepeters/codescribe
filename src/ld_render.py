@@ -226,8 +226,28 @@ def _render(expr):
     raise TypeError("cannot render %r" % (expr,))
 
 
-def render_rung(expr):
-    """Render one rung, bounded by the power rails."""
+def _pin_block_rungs(expr, found):
+    """Collect the sub-rungs feeding side pins, in the order they execute.
+
+    A box wired into another box's side pin is drawn on a wire of its own
+    above the box that reads it, which names it in its pin caption. Deeper
+    boxes come first, because that is the order the values are produced in.
+    """
+    if isinstance(expr, Series):
+        for item in expr.items:
+            _pin_block_rungs(item, found)
+    elif isinstance(expr, Parallel):
+        for branch in expr.branches:
+            _pin_block_rungs(branch, found)
+    elif isinstance(expr, Element):
+        for pin_block in expr.pin_blocks:
+            _pin_block_rungs(pin_block, found)
+            found.append(pin_block)
+    return found
+
+
+def _render_wire(expr):
+    """One wire between the rails."""
     chars = charset.active()
     block = _render(expr)
     lines = []
@@ -236,6 +256,20 @@ def render_rung(expr):
             lines.append(chars["T_RIGHT"] + chars["H"] * 2 + line + chars["H"] * 2 + chars["T_LEFT"])
         else:
             lines.append(chars["V"] + "  " + line)
+    return lines
+
+
+def render_rung(expr):
+    """Render one rung, bounded by the power rails.
+
+    Boxes feeding side pins are drawn first, on wires of their own: the
+    caption that reads one names only its output, so without the box the
+    diagram would not say what feeds it.
+    """
+    lines = []
+    for pin_block in _pin_block_rungs(expr, []):
+        lines.extend(_render_wire(pin_block))
+    lines.extend(_render_wire(expr))
     return lines
 
 

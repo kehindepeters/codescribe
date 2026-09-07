@@ -170,6 +170,7 @@ def _build_block(node, by_id, visiting, via_pin):
     power_pin = None
     power_negated = False
     side_pins = []
+    pin_blocks = []
 
     for connection in node.inputs:
         upstream = by_id.get(connection.ref_id)
@@ -181,7 +182,7 @@ def _build_block(node, by_id, visiting, via_pin):
             # Flattened through expr_to_text, not taken from the raw label:
             # an in-place negated inVariable must keep its NOT, or the pin
             # silently inverts.
-            side_pins.append((connection.target_pin, _pin_text(sub_expr, connection)))
+            side_pins.append((connection.target_pin, _pin_text(sub_expr, connection, pin_blocks)))
         elif power_pin is None:
             power_pin = connection.target_pin
             power_expr = sub_expr
@@ -189,7 +190,7 @@ def _build_block(node, by_id, visiting, via_pin):
             # box wall, after everything the rung has accumulated.
             power_negated = connection.negated
         else:
-            side_pins.append((connection.target_pin, _pin_text(sub_expr, connection)))
+            side_pins.append((connection.target_pin, _pin_text(sub_expr, connection, pin_blocks)))
 
     input_pins = []
     if power_pin is not None:
@@ -217,13 +218,50 @@ def _build_block(node, by_id, visiting, via_pin):
         output_wired=via_pin is not None,
         power_negated=power_negated,
         negated_outputs=set(node.negated_outputs),
+        pin_blocks=pin_blocks,
     )
     return series([power_expr, element])
 
 
-def _pin_text(sub_expr, connection):
+def _pin_expr_text(expr, hoisted):
+    """A side pin's condition text, hoisting any box out of it.
+
+    A box wired into a side pin is not a term of that pin's condition: it is
+    a call in its own right, and everything to its left on the wire is its
+    input, not the pin's. Flattening the whole chain into the caption states
+    logic the program does not have - "RESET := xB AND NOT tmrA.Q" for a
+    rung that resets on NOT tmrA.Q alone - so the chain up to and including
+    the box is hoisted into ``hoisted`` to be rendered and called as its own
+    sub-rung, and only the output the pin reads is named here. This is what
+    the power path already does; see rung_to_statements.
+    """
+    if isinstance(expr, Series):
+        items = expr.items
+        # The last box on the wire is the one the pin reads. Anything before
+        # it feeds it, anything after it operates on its output.
+        cut = -1
+        for index, item in enumerate(items):
+            if isinstance(item, Element) and item.kind == BLOCK:
+                cut = index
+        if cut < 0:
+            return expr_to_text(expr)
+        hoisted.append(series(items[: cut + 1]))
+        parts = [part for part in (expr_to_text(item) for item in items[cut:]) if part]
+        return " AND ".join(parts)
+    if isinstance(expr, Parallel):
+        parts = [part for part in (_pin_expr_text(branch, hoisted) for branch in expr.branches) if part]
+        return "(" + " OR ".join(parts) + ")"
+    if isinstance(expr, Element) and expr.kind == BLOCK:
+        # A box feeding the pin directly still has a call to make; without
+        # this it is named in the caption and never called at all.
+        hoisted.append(expr)
+        return expr_to_text(expr)
+    return expr_to_text(expr)
+
+
+def _pin_text(sub_expr, connection, hoisted):
     """A side pin's caption, honouring the pin's own negation bubble."""
-    text = expr_to_text(sub_expr)
+    text = _pin_expr_text(sub_expr, hoisted)
     if connection.negated:
         return "NOT " + _bracket(text) if text else "NOT ?"
     return text

@@ -304,6 +304,7 @@ class Element(object):
         output_wired=False,
         power_negated=False,
         negated_outputs=None,
+        pin_blocks=None,
     ):
         self.kind = kind
         self.label = label
@@ -323,6 +324,12 @@ class Element(object):
         # True when something downstream actually consumes the active output,
         # so the renderer knows whether to break the box edge with a tee.
         self.output_wired = output_wired
+        # Blocks only: whole sub-rungs feeding this block's side pins. A box
+        # wired into a side pin has a call of its own to make, with its own
+        # inputs; the pin caption only names the output it reads. They are
+        # rendered and emitted before this block, in the order the pins were
+        # wired, because that is the order they execute in.
+        self.pin_blocks = pin_blocks if pin_blocks is not None else []
 
     @property
     def title(self):

@@ -230,8 +230,38 @@ check("fidelity: negated output pin is marked in the diagram", any("Q =o> xCool"
 
 # A negated output consumed through a SIDE PIN goes via expr_to_text, a
 # different path from the power flow - it must keep the NOT too.
-check("fidelity: negated output survives into a side pin", any("RESET := xB AND NOT tmrA.Q" in line for line in fidelity_st))
-check("fidelity: side pin caption matches the ST", any("RESET := xB AND NOT tmrA.Q" in line for line in fidelity_art))
+check("fidelity: negated output survives into a side pin", any("RESET := NOT tmrA.Q" in line for line in fidelity_st))
+check("fidelity: side pin caption matches the ST", any("RESET := NOT tmrA.Q" in line for line in fidelity_art))
+
+# The chain feeding a box on a side pin is the BOX's input, not a term of the
+# pin's condition. Folding it in ("xB AND NOT tmrA.Q") says the counter also
+# resets on NOT xB, and left tmrA with no call at all - a timer that the text
+# never runs.
+check("fidelity: a side-pin box gets its own call", any("tmrA(IN := xB);" in line for line in fidelity_st))
+check("fidelity: a side-pin box is drawn", any("tmrA : TON" in line for line in fidelity_art))
+check(
+    "fidelity: the side pin does not absorb the box's input",
+    not any("xB AND" in line for line in fidelity_st + fidelity_art),
+)
+check(
+    "fidelity: the side-pin call comes before the box that reads it",
+    fidelity_st.index("tmrA(IN := xB);") < fidelity_st.index("ctr2(CU := xGo2, RESET := NOT tmrA.Q);"),
+)
+
+# The same shape with nothing negated and no chain to absorb: an SR latch
+# feeding a counter's RESET. The latch was named in the caption and never
+# called.
+LD_SIDE_PIN = os.path.join(FIXTURES, "ld_side_pin_latch.plcopen.xml")
+side_pin_pou = parse_pous(LD_SIDE_PIN)[0]
+side_pin_st = st_render.render_pou(side_pin_pou)
+side_pin_art = render_pou(side_pin_pou)
+
+check_equal("side pin: one rung", len(side_pin_pou.rungs), 1)
+check("side pin: the latch is called", any("latch(SET1 := xSet, RESET := xClear);" in line for line in side_pin_st))
+check("side pin: the pin reads only the latch output", any("RESET := latch.Q1" in line for line in side_pin_st))
+check("side pin: the caption matches the ST", any("RESET := latch.Q1" in line for line in side_pin_art))
+check("side pin: the latch box is drawn", any("latch : SR" in line for line in side_pin_art))
+check("side pin: no chain folded into the pin", not any("xSet AND" in line for line in side_pin_st + side_pin_art))
 
 # A negated wired output feeding a coil, and only one bubble drawn for it.
 check("fidelity: negated wired output inverts the coil", any("xFin := NOT ctr2.Q;" in line for line in fidelity_st))
