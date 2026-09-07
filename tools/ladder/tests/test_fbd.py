@@ -403,6 +403,23 @@ check("shared box: both stores are still made", "xDone := fbTimer.Q;" in shared_
 check("shared box: the operator is still drawn", any("Out1" in l for l in shared_art))
 
 
+# --- EN and ENO on an operator box -------------------------------------------
+
+# EN decides whether a box runs; it is not one of the things being added. It
+# was folded into the operands, so a three-way addition that runs only while
+# xEn read as a four-way addition of the enable itself. ENO reports that the
+# box ran, and reading it as the box's result made a boolean out of the sum.
+enable_st = st_render.render_pou(two_pins)
+
+check("enable: EN is not an operand", "IF xEn THEN iSum := iA + iB + iC; END_IF" in enable_st)
+check("enable: no four-way sum survives", not any("xEn + iA" in line for line in enable_st))
+check("enable: ENO reports the enable", "xSumOk := xEn;" in enable_st)
+check("enable: the ENO store is not itself guarded", not any(line.startswith("IF xEn THEN xSumOk") for line in enable_st))
+
+# A box with no EN wired keeps its plain expression and no guard.
+check("enable: an unguarded operator is unchanged", "xAny := fbTimer.Q OR xManual;" in shared_st)
+
+
 # --- a store that holds: set and reset ---------------------------------------
 
 # storage="set" on an outVariable was dropped, so a latch rendered as

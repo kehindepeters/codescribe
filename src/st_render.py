@@ -153,6 +153,29 @@ def _operand(text):
     return text if is_simple_term(text) else "(" + text + ")"
 
 
+# The enable pair CODESYS draws on a box. EN decides whether the box runs at
+# all and ENO reports that it did; neither is an operand, and neither is the
+# box's result.
+EN_PIN = "EN"
+ENO_PIN = "ENO"
+
+
+def _enable(call, statements, emitted):
+    """The EN pin's value as text, or None when the box has no live enable.
+
+    Re-reading the pin is safe: a call is memoised in ``emitted``, so asking
+    for its value again returns the same text without emitting the call a
+    second time, and a signal has nothing to emit.
+    """
+    for pin, source in call.inputs:
+        if pin != EN_PIN:
+            continue
+        text = _fbd_value(source, statements, emitted)
+        # A box wired to a constant TRUE is a box with no enable worth stating.
+        return None if text in (None, "", "TRUE") else text
+    return None
+
+
 def _operator_expression(node, values):
     symbol = INFIX_OPERATORS.get(node.type_name)
     if symbol and len(values) >= 2:
@@ -178,6 +201,11 @@ def _fbd_value(node, statements, emitted=None):
         # value differs per reader, so it is computed here rather than
         # memoised with the call.
         value = _fbd_value(node.call, statements, emitted)
+        if node.call.is_operator and node.pin == ENO_PIN:
+            # ENO says the box ran, which is what its EN said. It is not the
+            # result: reading it as the expression made "xSumOk := iA + iB +
+            # iC;" out of a boolean that only ever says whether the add ran.
+            return _enable(node.call, statements, emitted) or "TRUE"
         if node.call.is_operator or not node.pin:
             # An operator has no instance to take a pin from; it inlines as
             # the one expression whichever pin reads it.
@@ -204,7 +232,13 @@ def _fbd_value(node, statements, emitted=None):
 
     if isinstance(node, Assign):
         value = _fbd_value(node.source, statements, emitted) or "FALSE"
-        statements.append(store_statement(node.label, value, node.storage, node.negated))
+        statement = store_statement(node.label, value, node.storage, node.negated)
+        guard = _assign_guard(node.source, statements, emitted)
+        if guard:
+            # An operator behind an EN pin computes only while EN holds, and
+            # an expression has nowhere to say so - the store it feeds does.
+            statement = "IF %s THEN %s END_IF" % (guard, statement)
+        statements.append(statement)
         return node.label or "?"
 
     if isinstance(node, Call):
@@ -234,8 +268,10 @@ def _fbd_value(node, statements, emitted=None):
 
         if node.is_operator:
             # Operators and functions have no instance to call, so they inline
-            # as an expression rather than a statement.
-            expression = _operator_expression(node, [value for _pin, value in pairs])
+            # as an expression rather than a statement. EN is not one of the
+            # operands: folding it in made "iSum := xEn + iA + iB + iC;" out
+            # of a three-way addition that runs only while xEn.
+            expression = _operator_expression(node, [value for pin, value in pairs if pin != EN_PIN])
             if node.active_output in node.negated_outputs:
                 expression = "NOT " + _operand(expression)
             return remember(expression)
@@ -255,6 +291,20 @@ def _fbd_value(node, statements, emitted=None):
         return remember(result)
 
     return "?"
+
+
+def _assign_guard(source, statements, emitted):
+    """The EN a store inherits from the operator it reads, if any.
+
+    Only for a store reading an operator's result directly. A function block
+    states its own EN as a call argument, and an ENO reader is the enable
+    rather than something the enable gates.
+    """
+    if not isinstance(source, OutputRef) or not source.call.is_operator:
+        return None
+    if source.pin == ENO_PIN:
+        return None
+    return _enable(source.call, statements, emitted)
 
 
 def network_to_statements(network):
