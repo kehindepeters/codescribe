@@ -31,6 +31,7 @@ import time
 
 import fbd_render
 import ld_render
+import native_networks
 import parse_fbd
 import parse_ld
 import plcopen
@@ -43,6 +44,14 @@ from util import open_utf8
 # these, so both are ignored by construction.
 RENDERED_SUFFIX = ".txt"
 ST_SUFFIX = ".st.txt"
+
+# Said in the file itself when the editor's numbering could not be recovered.
+# Numbering silently adrift from the editor is how an off-by-one review
+# happens; a reviewer has to be able to see the doubt in the file they read.
+ALIGNMENT_WARNING = (
+    "(* WARNING: could not line these networks up with the native export;"
+    " the numbering may not match the CODESYS editor *)"
+)
 
 # Stated in the file itself, not just in the docs. The ST reads like source
 # and sits next to real .st exports, so the one thing a reader must not
@@ -68,6 +77,7 @@ EMPTY_STATS = {
     "verbatim_declarations": 0,
     "fallback_declarations": 0,
     "members_missing": 0,
+    "alignment_failures": 0,
 }
 
 STATS = dict(EMPTY_STATS)
@@ -117,6 +127,11 @@ def summary():
             "members_missing"
         ]
         line += " member's own body; nothing was written for those - review their native xml."
+    if STATS["alignment_failures"]:
+        line += "\n         NOTE: %d POU(s) could not be lined up with their native export;" % STATS[
+            "alignment_failures"
+        ]
+        line += " those are numbered in export order and say so at the top."
     return line
 
 
@@ -181,7 +196,7 @@ def _joined(blocks):
     return lines
 
 
-def render_plcopen(plcopen_path, declaration_text=None, member_name=None):
+def render_plcopen(plcopen_path, declaration_text=None, member_name=None, native_path=None):
     """(diagram lines, ST lines) for a PLCopen file. ([], []) if none apply.
 
     Two renderings of the same networks, for two files. They were written
@@ -196,7 +211,9 @@ def render_plcopen(plcopen_path, declaration_text=None, member_name=None):
     and must never be fed back into CODESYS; the file says so at the top.
 
     ``member_name`` restricts the rendering to that sub-POU member's own
-    body; see _render_pous.
+    body; see _render_pous. ``native_path`` is the native export written
+    beside the rendering, read back for the editor's own network list; see
+    native_networks.
     """
     started = time.time()
     pous = _render_pous(plcopen_path, member_name)
@@ -204,14 +221,28 @@ def render_plcopen(plcopen_path, declaration_text=None, member_name=None):
         pous[0][0].declaration_text = declaration_text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
     STATS["parse_seconds"] += time.time() - started
 
+    # The editor's own network list, where one is available. Only for a file
+    # holding a single renderable POU: the list belongs to one POU, and there
+    # is nothing in it to say which.
+    warnings = []
+    if native_path is not None and len(pous) == 1:
+        native = native_networks.read_networks(native_path)
+        if native:
+            aligned = native_networks.align(native, pous[0][0].networks)
+            if aligned is None:
+                STATS["alignment_failures"] += 1
+                warnings.append(ALIGNMENT_WARNING)
+            else:
+                pous[0][0].networks = aligned
+
     # A member's export carries the parent's declaration, not its own, so
     # both renderings have to open by saying whose declaration they show.
     notes = []
     for pou, _art_renderer in pous:
+        head = list(warnings)
         if getattr(pou, "member_of_parent", False):
-            notes.append([u"(* " + pou.name + u" - the declaration below is the parent POU's *)", u""])
-        else:
-            notes.append([])
+            head.append(u"(* " + pou.name + u" - the declaration below is the parent POU's *)")
+        notes.append(head + [u""] if head else [])
 
     started = time.time()
     drawn = []
@@ -313,7 +344,7 @@ def write_rendered_text(obj, base_path, member_name=None):
 
         # render_plcopen accounts for its own parse, draw and ST time.
         textual_declaration = getattr(getattr(obj, "textual_declaration", None), "text", None)
-        lines, st_lines = render_plcopen(temp_path, textual_declaration, member_name)
+        lines, st_lines = render_plcopen(temp_path, textual_declaration, member_name, base_path + ".xml")
         if not lines:
             if member_name is not None:
                 # No file at all is the honest outcome: an absent rendering

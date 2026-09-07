@@ -30,5 +30,5 @@ END_VAR
 │                               └──────────────────────┘
 
 (* Network 4 *)
-│
-├────TestJump:────┤
+(* label: TestJump *)
+(* empty network *)

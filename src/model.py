@@ -388,11 +388,18 @@ class Network(object):
     with the editor, which is what a reviewer compares against.
     """
 
-    def __init__(self, comment="", outputs=None, title=""):
+    def __init__(self, comment="", outputs=None, title="", label="", note=None):
         self.comment = comment
         # CODESYS keeps a network's title separately from its comment, and
         # draws it above one. A network can carry either, both or neither.
         self.title = title
+        # The jump-target label CODESYS keeps on the network. Only filled in
+        # when the native export has been read, which is the only place it
+        # survives as a property of the network rather than a loose element.
+        self.label = label
+        # Why this network has no body: out-commented, or empty. Set only for
+        # networks the PLCopen export left out entirely.
+        self.note = note
         self.outputs = outputs if outputs is not None else []
 
     def __repr__(self):

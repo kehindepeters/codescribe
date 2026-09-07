@@ -387,6 +387,71 @@ finally:
     shutil.rmtree(workspace)
 
 
+# --- the editor's own network numbering -------------------------------------
+
+# CODESYS leaves out of the PLCopen export every network that carries no
+# elements - an out-commented one goes entirely, comment included, and so does
+# an empty one. Numbering what survives 1..n drifts from what the editor
+# shows, so a reviewer opening "Network 5" in CODESYS reads different logic
+# under "(* Network 5 *)". The native export beside the rendering carries the
+# full list, and it is the authority for the structure.
+import native_networks  # noqa: E402
+
+EXPORT = os.path.join(REPO, "GraphicalTesting")
+
+
+def native_of(pou_path):
+    return native_networks.read_networks(pou_path)
+
+
+fb_native = native_of(os.path.join(EXPORT, "StandardPLC", "application", "FB_TESTING.xml"))
+check_equal("the native list has every network", len(fb_native), 9)
+check("the out-commented network is in it", fb_native[1].out_commented)
+check("and it keeps its comment", fb_native[1].comment.startswith("//Safely power off PLC"))
+check_equal("the label is on the network that owns it", fb_native[2].label, "ByeBye")
+check("an empty network is marked empty", fb_native[3].empty)
+check_equal("a comment-only network keeps its comment", fb_native[4].comment, "Comment only network")
+
+# The committed rendering is the worked example, so it has to agree with the
+# native list beside it - one numbered network per editor network, in order,
+# each headed by its own title or comment. Without this a renderer change
+# rewrites those files and nothing notices.
+for device in ("SafetyPLC", "StandardPLC"):
+    folder = os.path.join(EXPORT, device, "application")
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith(".xml"):
+            continue
+        native = native_of(os.path.join(folder, name))
+        rendered = os.path.join(folder, name[: -len(".xml")] + ".txt")
+        if native is None or not os.path.exists(rendered):
+            continue
+        headers = [line for line in read(rendered).split("\n") if line.startswith("(* Network ")]
+        check_equal("committed " + name + ": one header per editor network", len(headers), len(native))
+        for index, entry in enumerate(native):
+            heading = entry.title or entry.comment
+            expected = "(* Network " + str(index + 1)
+            if heading:
+                expected += ": " + heading.replace("*)", "* )").lstrip("/").strip()
+            check_equal(
+                "committed " + name + " network " + str(index + 1),
+                headers[index],
+                expected + " *)",
+            )
+
+
+# The alignment refuses rather than guesses. One body more on the parsed side
+# than the native list accounts for means an assumption broke, and a silently
+# misnumbered file is worse than one that says it could not tell.
+class FakeNetwork(object):
+    def __init__(self, outputs):
+        self.outputs = outputs
+
+
+spare = [FakeNetwork(["logic"]) for _ in range(len([n for n in fb_native if n.has_logic]) + 1)]
+check("a body the native list cannot account for is refused", native_networks.align(fb_native, spare) is None)
+check("and no native list at all is refused", native_networks.align(None, spare) is None)
+
+
 # --- the importer ignores the derived file ---------------------------------
 
 # This is the contract that keeps the round trip intact. import_directory_child

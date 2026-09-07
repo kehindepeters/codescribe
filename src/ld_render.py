@@ -59,6 +59,15 @@ def network_headers(number, network):
     lines = [header + " *)"]
     if title and comment:
         lines.append("(* " + comment + " *)")
+    label = _one_line(getattr(network, "label", "") or "").strip()
+    if label:
+        # CODESYS keeps the label on the network; PLCopen exports it as a
+        # loose element, so it is only known here when the native export has
+        # been read.
+        lines.append("(* label: " + label + " *)")
+    note = getattr(network, "note", None)
+    if note:
+        lines.append("(* " + note + " *)")
     return lines
 
 

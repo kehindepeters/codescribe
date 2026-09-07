@@ -29,3 +29,4 @@ IF CTU_0.Q THEN PowerOff := FALSE; END_IF
 
 (* Network 4 *)
 (* label: TestJump *)
+(* empty network *)

@@ -98,6 +98,15 @@ SFC and CFC POUs are not yet rendered; they export as native xml alone.
 
 Networks are numbered as CODESYS numbers them, so a network in the file lines up with the one in the editor. Each is headed by its title, as the editor heads it, with the network's comment on the line below; a network with no title puts its comment on the number line instead.
 
+CODESYS leaves out of the PLCopen export every network that carries no elements: an out-commented one goes entirely, comment included, and so does an empty one. The numbering comes from the native xml written beside the rendering, which lists every network the editor shows, so those keep their number and say why they have no diagram:
+
+```
+(* Network 2: Safely power off PLC when ignition is lower than 5V *)
+(* out-commented in CODESYS - does not execute; diagram not exported, see the native xml *)
+```
+
+If the two cannot be lined up, the file says so at the top and falls back to numbering in export order, rather than showing numbers that quietly disagree with the editor.
+
 To render an exported PLCopen file by hand, to get plain ASCII instead of box drawing, or to see the equivalent Structured Text (which the export does not write, since showing each network twice in two notations reads worse than showing it once):
 
 ```
