@@ -80,20 +80,7 @@ The declaration is copied from the original CODESYS declaration source, preservi
 
 This file is **derived and read-only**. The native xml remains the only thing `Import From Files` reads, so editing the `.txt` changes nothing — it exists to make diffs and code review possible. Layout comes from how the elements are wired, not from their coordinates, so moving a block in the CODESYS editor produces no diff.
 
-Beside those two, CODESCRIBE writes a `<name>.st.txt` holding the same networks as equivalent Structured Text:
-
-```
-(* Network 2 *)
-TON_0(IN := PowerOn, PT := T#5S);
-CTU_0(CU := TON_0.Q, RESET := PowerOff, PV := 10);
-IF CTU_0.Q THEN PowerOff := FALSE; END_IF
-```
-
-The diagram shows the shape; the ST states the logic exactly, and says things a single-wire diagram cannot. A block read through two of its output pins is one call in the ST, where the diagram has to draw the box once and name it again for the second reader. The ST also diffs line by line, where renaming a variable can re-flow every line of a diagram.
-
-It is **a rendering, not a translation**: it is not guaranteed to compile, it must never be imported or pasted back into CODESYS, and the file opens with a banner saying so. Like the `.txt`, `Import From Files` ignores it — the dispatch is on `.xml` and `.st`, and both derived files end in `.txt`.
-
-A graphical action, transition or method is rendered from its own body, not from the parent POU it is exported inside. PLCopen has no top-level element for one, so CODESYS exports the parent with the member nested in it, parent body included; the rendering picks the member out by name and says at the top whose declaration it is showing, because the export only carries the parent's. Where an export does not carry the member's body at all, no files are written for it and the export summary says so - an absent rendering sends you to the native xml, a rendering of the wrong POU does not.
+An equivalent-Structured-Text rendering of the same networks is available but not written by the export. The ST states the logic exactly where the diagram can only approximate it - a block read through two of its output pins is one call, and no single-wire diagram can say so - but it is a rendering, not a translation, and must never be fed back into CODESYS. `tools/ladder/write_st.py` writes one from a PLCopen export when it is wanted, and its docstring says how to put it back on the export path.
 
 SFC and CFC POUs are not yet rendered; they export as native xml alone.
 

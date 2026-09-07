@@ -35,7 +35,6 @@ import native_networks
 import parse_fbd
 import parse_ld
 import plcopen
-import st_render
 from util import open_utf8
 
 # Suffixes for the derived files. Deliberately not .st: these are not
@@ -43,7 +42,6 @@ from util import open_utf8
 # dispatches on ".xml" and ".st", and os.path.splitext sees ".txt" for both of
 # these, so both are ignored by construction.
 RENDERED_SUFFIX = ".txt"
-ST_SUFFIX = ".st.txt"
 
 # Said in the file itself when the editor's numbering could not be recovered.
 # Numbering silently adrift from the editor is how an off-by-one review
@@ -52,17 +50,6 @@ ALIGNMENT_WARNING = (
     "(* WARNING: could not line these networks up with the native export;"
     " the numbering may not match the CODESYS editor *)"
 )
-
-# Stated in the file itself, not just in the docs. The ST reads like source
-# and sits next to real .st exports, so the one thing a reader must not
-# assume is that it can go back into CODESYS.
-ST_HEADER = [
-    u"(* Equivalent Structured Text for a graphical POU, written by codescribe.",
-    u"   READ ONLY. This is a rendering of the native xml beside it, not a",
-    u"   translation: it is not guaranteed to compile and must never be imported",
-    u"   or pasted back into CODESYS. The native xml is the source. *)",
-    u"",
-]
 
 # Rendering adds a second CODESYS-side export per graphical POU, so the cost
 # is worth reporting rather than leaving people to wonder why the export got
@@ -73,7 +60,6 @@ EMPTY_STATS = {
     "export_xml_seconds": 0.0,
     "parse_seconds": 0.0,
     "draw_seconds": 0.0,
-    "st_seconds": 0.0,
     "verbatim_declarations": 0,
     "fallback_declarations": 0,
     "members_missing": 0,
@@ -97,19 +83,16 @@ def summary():
     """
     if not STATS["rendered"] and not STATS["skipped"]:
         return None
-    total = (
-        STATS["export_xml_seconds"] + STATS["parse_seconds"] + STATS["draw_seconds"] + STATS["st_seconds"]
-    )
+    total = STATS["export_xml_seconds"] + STATS["parse_seconds"] + STATS["draw_seconds"]
     line = (
         "Rendered %d graphical POUs in %.1fs"
-        " (%.1fs CODESYS export_xml, %.1fs parsing, %.1fs drawing, %.1fs ST); skipped %d"
+        " (%.1fs CODESYS export_xml, %.1fs parsing, %.1fs drawing); skipped %d"
         % (
             STATS["rendered"],
             total,
             STATS["export_xml_seconds"],
             STATS["parse_seconds"],
             STATS["draw_seconds"],
-            STATS["st_seconds"],
             STATS["skipped"],
         )
     )
@@ -197,18 +180,13 @@ def _joined(blocks):
 
 
 def render_plcopen(plcopen_path, declaration_text=None, member_name=None, native_path=None):
-    """(diagram lines, ST lines) for a PLCopen file. ([], []) if none apply.
+    """The diagram lines for a PLCopen file, or [] if none apply.
 
-    Two renderings of the same networks, for two files. They were written
-    into one file at first and that was worse, not better: the same network
-    twice in two notations, one after the other, is harder to read than
-    either alone. In separate files the choice stays with the reader - the
-    diagram shows the shape, and the ST states the logic exactly where the
-    diagram can only approximate it. A block read through two of its pins is
-    the clearest case: the ST says one call, and no single-wire diagram can.
-
-    The ST is a rendering, not a translation. It is not guaranteed to compile
-    and must never be fed back into CODESYS; the file says so at the top.
+    The declaration and a diagram per network. An equivalent-ST rendering is
+    written by st_render and reachable from tools/ladder/render.py, but the
+    export does not write one: it was tried in the same file, which was worse
+    than either notation alone, and then in a file of its own, which is not
+    what is wanted for now.
 
     ``member_name`` restricts the rendering to that sub-POU member's own
     body; see _render_pous. ``native_path`` is the native export written
@@ -255,11 +233,7 @@ def render_plcopen(plcopen_path, declaration_text=None, member_name=None, native
         drawn.append(notes[index] + art_renderer.render_pou(pou))
     STATS["draw_seconds"] += time.time() - started
 
-    started = time.time()
-    text = [notes[index] + st_render.render_pou(pou) for index, (pou, _art) in enumerate(pous)]
-    STATS["st_seconds"] += time.time() - started
-
-    return _joined(drawn), _joined(text)
+    return _joined(drawn)
 
 
 # Ways of asking for plaintext declarations, most likely to bind first.
@@ -344,7 +318,7 @@ def write_rendered_text(obj, base_path, member_name=None):
 
         # render_plcopen accounts for its own parse, draw and ST time.
         textual_declaration = getattr(getattr(obj, "textual_declaration", None), "text", None)
-        lines, st_lines = render_plcopen(temp_path, textual_declaration, member_name, base_path + ".xml")
+        lines = render_plcopen(temp_path, textual_declaration, member_name, base_path + ".xml")
         if not lines:
             if member_name is not None:
                 # No file at all is the honest outcome: an absent rendering
@@ -360,8 +334,6 @@ def write_rendered_text(obj, base_path, member_name=None):
             return False
 
         _write_lines(base_path + RENDERED_SUFFIX, lines)
-        if st_lines:
-            _write_lines(base_path + ST_SUFFIX, ST_HEADER + st_lines)
         STATS["rendered"] += 1
         return True
     except Exception as error:
@@ -378,7 +350,6 @@ def write_rendered_text(obj, base_path, member_name=None):
         # A write that died halfway leaves a truncated rendering that looks
         # exactly like a valid one. No file at all is the honest outcome.
         _remove_quietly(base_path + RENDERED_SUFFIX)
-        _remove_quietly(base_path + ST_SUFFIX)
         return False
     finally:
         _remove_quietly(temp_path)

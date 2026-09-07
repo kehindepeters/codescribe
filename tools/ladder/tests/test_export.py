@@ -131,27 +131,9 @@ try:
     check("the declaration appears once", content.count("END_VAR") == 1)
     check("derived file ends with a newline", content.endswith("\n"))
 
-    # --- the ST rendering, in a file of its own -----------------------------
-
-    st_content = read(base + ".st.txt")
-    check("ST file lands beside the diagram", os.path.exists(base + ".st.txt"))
-    # It reads like source and sits next to real .st exports, so the file has
-    # to say what it is before it says anything else.
-    check("ST file opens with the read-only banner", st_content.startswith("(* Equivalent Structured Text"))
-    check("the banner forbids importing it", "must never be imported" in st_content)
-    check("ST file carries the declaration", "PROGRAM LD_TEST" in st_content)
-    check("ST file states the logic", "IF CTU_0.Q THEN PowerOff := FALSE; END_IF" in st_content)
-    check("ST file is numbered like the diagram", "(* Network 1" in st_content)
-    check("ST file has no diagram in it", "TON_0 : TON" not in st_content.replace("TON_0 : TON;", ""))
-    check("ST file ends with a newline", st_content.endswith("\n"))
-
-    # The temp PLCopen file is staged outside the export folder, so nothing but
-    # the two renderings may appear next to the native xml.
-    check_equal(
-        "no stray files left behind",
-        sorted(os.listdir(workspace)),
-        ["LD_TEST.st.txt", "LD_TEST.txt"],
-    )
+    # The temp PLCopen file is staged outside the export folder, so nothing
+    # but the rendering may appear next to the native xml.
+    check_equal("no stray files left behind", sorted(os.listdir(workspace)), ["LD_TEST.txt"])
 
     # --- an older ScriptEngine without the plaintext overload ---------------
 
@@ -166,7 +148,6 @@ try:
     sfc = FakePou("SFC_TEST", os.path.join(FIXTURES, "SFCTesting.xml"))
     check("sfc reports nothing rendered", graphical_export.write_rendered_text(sfc, sfc_base) is False)
     check("sfc writes no empty file", not os.path.exists(sfc_base + ".txt"))
-    check("sfc writes no empty ST file", not os.path.exists(sfc_base + ".st.txt"))
 
     # --- cost reporting -----------------------------------------------------
 
@@ -299,10 +280,6 @@ END_VAR"""
         except Exception as error:
             check("a mid-write failure is reported, not raised", False, repr(error))
         check("a truncated rendering is not left behind", not os.path.exists(torn_base + ".txt"))
-        # Both files go, not just the one that happened to fail: a diagram
-        # with no ST beside it, or the reverse, is a rendering that disagrees
-        # with itself.
-        check("no half-written ST is left behind", not os.path.exists(torn_base + ".st.txt"))
     finally:
         graphical_export.open_utf8 = real_open_utf8
 finally:
@@ -336,13 +313,6 @@ try:
         "the rendering says whose declaration it shows",
         "the declaration below is the parent POU's" in action_content,
     )
-
-    # Both derived files describe the member. An ST file showing the parent
-    # beside a diagram showing the action would be worse than either alone.
-    action_st = read(action_base + ".st.txt")
-    check("the ST file follows the member too", "Status.Action := xAction;" in action_st)
-    check("the ST file does not show the parent", "Status.Parent" not in action_st)
-    check("the ST file carries the member note", "the declaration below is the parent POU's" in action_st)
 
     # A graphical method: CODESYS spells the tag <Method> with a capital M
     # where it spells actions <action>. Matching one case only meant methods
@@ -380,7 +350,6 @@ try:
         graphical_export.write_rendered_text(missing, missing_base, member_name="ACT_MISSING") is False,
     )
     check("no foreign dump is written", not os.path.exists(missing_base + ".txt"))
-    check("no foreign ST is written either", not os.path.exists(missing_base + ".st.txt"))
     check_equal("the missing member is counted", graphical_export.STATS["members_missing"], 1)
     check("the summary reports the missing member", "nothing was written for those" in graphical_export.summary())
 finally:
@@ -476,7 +445,7 @@ check_equal("and carries its label", aligned[2].label, "RETRY")
 # derived files.
 workspace = tempfile.mkdtemp()
 try:
-    for name in ("Main.txt", "Main.Method.txt", "Main.gvl.txt", "Main.st.txt", "Main.Method.st.txt"):
+    for name in ("Main.txt", "Main.Method.txt", "Main.gvl.txt"):
         handle = io.open(os.path.join(workspace, name), "w", encoding="utf-8")
         handle.write("PROGRAM Main\n")
         handle.close()
