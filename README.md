@@ -61,6 +61,8 @@ Items are exported in formatted structured text (`.st`) where possible, and in n
 
 Actions and Transitions export as `.st` with the kind encoded in the filename (`MyPou.MyAction.action.st`, `MyPou.MyTransition.transition.st`). The file contains the implementation text only, as these objects have no textual declaration.
 
+Build properties (_Properties > Build_: Exclude from build, External, Enable system call, Link always, Compiler defines) are not part of an object's text. An object exported as `.st`, and a folder, writes them to a `<name>.build.json` beside it, only when one differs from its default, and import applies them to the recreated object. Objects exported as native xml carry them inside the xml.
+
 Two service objects export **read-only** — written on every export, never imported (the project template carries the real objects):
 
 - The Library Manager exports its reference list as `<name>.libraries.txt` (one line per library: name, version, vendor), so a review or bench check can see the version each library resolves to - shown where CODESYS reports it, and as the requested constraint (such as `*` for newest) where it does not.

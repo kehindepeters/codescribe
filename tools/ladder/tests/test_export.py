@@ -923,6 +923,87 @@ else:
     ):
         check_equal("tracked: " + path, git_ignores(path), 1)
 
+
+# --- build properties survive an ST round trip --------------------------------
+
+# An object exported as .st writes only its text, so Exclude from build and the
+# other Build properties came back reset on import. They now travel in a
+# <name>.build.json sidecar, written only when something is not the default.
+
+
+class FakeBuildProperties(object):
+    """Mirrors ScriptBuildProperties: reading an invalid property raises."""
+
+    def __init__(self, valid, **values):
+        object.__setattr__(self, "_valid", set(valid))
+        object.__setattr__(self, "_values", dict(values))
+
+    def __getattr__(self, name):
+        if name.endswith("_is_valid"):
+            return name[: -len("_is_valid")] in self._valid
+        if name not in self._valid:
+            raise SystemError("Build property is not editable.")
+        return self._values.get(name, "" if name == "compiler_defines" else False)
+
+    def __setattr__(self, name, value):
+        if name not in self._valid:
+            raise SystemError("Build property is not editable.")
+        self._values[name] = value
+
+
+class FakeBuildObject(object):
+    def __init__(self, name, build_properties):
+        self.name = name
+        self.build_properties = build_properties
+
+    def get_name(self):
+        return self.name
+
+
+ALL_BUILD = ("exclude_from_build", "external", "enable_system_call", "link_always", "compiler_defines")
+
+workspace = tempfile.mkdtemp()
+try:
+    base = os.path.join(workspace, "Helper")
+    excluded = FakeBuildObject("Helper", FakeBuildProperties(ALL_BUILD, exclude_from_build=True, compiler_defines="X"))
+    import_export.write_build_properties(excluded, base)
+    sidecar = base + import_export.BUILD_PROPERTIES_SUFFIX
+    check("a non-default build property writes a sidecar", os.path.exists(sidecar))
+
+    restored = FakeBuildObject("Helper", FakeBuildProperties(ALL_BUILD))
+    import_export.apply_build_properties(restored, base)
+    check_equal("exclude from build is restored", restored.build_properties.exclude_from_build, True)
+    check_equal("compiler defines are restored", restored.build_properties.compiler_defines, "X")
+    check_equal("an untouched property stays default", restored.build_properties.link_always, False)
+
+    plain_base = os.path.join(workspace, "Plain")
+    import_export.write_build_properties(FakeBuildObject("Plain", FakeBuildProperties(ALL_BUILD)), plain_base)
+    check(
+        "default build properties write no sidecar",
+        not os.path.exists(plain_base + import_export.BUILD_PROPERTIES_SUFFIX),
+    )
+
+    # A folder only has exclude_from_build valid; reading the rest must not raise.
+    folder = FakeBuildObject("Lib", FakeBuildProperties(("exclude_from_build",), exclude_from_build=True))
+    check_equal(
+        "only valid properties are read",
+        import_export.non_default_build_properties(folder),
+        {"exclude_from_build": True},
+    )
+    check_equal("no build properties at all reads as none", import_export.non_default_build_properties(object()), {})
+
+    # The sidecar must never be dispatched as an object of its own.
+    calls = []
+    original = import_from_files.import_method_st
+    import_from_files.import_method_st = lambda *args: calls.append(args)
+    try:
+        import_from_files.import_directory_child("Helper.build.json", workspace, None)
+    finally:
+        import_from_files.import_method_st = original
+    check_equal("the importer ignores the sidecar itself", calls, [])
+finally:
+    shutil.rmtree(workspace)
+
 print("")
 if failures:
     print("%d check(s) failed" % len(failures))

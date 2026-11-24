@@ -1,4 +1,5 @@
 # REMEMBER: this is python 2.7
+import json
 import os
 import re
 
@@ -79,9 +80,93 @@ def read_native(f, obj):
     obj.import_native(f)
 
 
+# Build properties (Properties > Build: Exclude from build, External, Link
+# always, ...) live on the object, not in its text. A native .xml export
+# carries them, but an object exported as .st (or a folder, which is just a
+# directory) would come back with every one reset to its default. They travel
+# in a <base>.build.json sidecar instead, written only when something differs
+# from the default so an ordinary export gains no files. The importer never
+# dispatches on .json, so the sidecar is only read by the object's own import.
+BUILD_PROPERTIES_SUFFIX = ".build.json"
+BUILD_PROPERTY_DEFAULTS = (
+    ("exclude_from_build", False),
+    ("external", False),
+    ("enable_system_call", False),
+    ("link_always", False),
+    ("compiler_defines", u""),
+)
+
+
+def _build_properties_of(obj):
+    """The object's build properties, or None. Never raises."""
+    try:
+        return obj.build_properties
+    except Exception:
+        return None
+
+
+def _property_is_valid(build_properties, name):
+    # Reading a property that is not valid for this object type raises
+    # "Build property is not editable", so the _is_valid flag gates every read.
+    try:
+        return bool(getattr(build_properties, name + "_is_valid"))
+    except Exception:
+        return False
+
+
+def non_default_build_properties(obj):
+    """{name: value} for each build property that differs from its default."""
+    build_properties = _build_properties_of(obj)
+    if build_properties is None:
+        return {}
+    changed = {}
+    for name, default in BUILD_PROPERTY_DEFAULTS:
+        if not _property_is_valid(build_properties, name):
+            continue
+        value = getattr(build_properties, name)
+        if isinstance(default, bool):
+            value = bool(value)
+        else:
+            value = u"%s" % (value or u"")
+        if value != default:
+            changed[name] = value
+    return changed
+
+
+def write_build_properties(obj, base_path):
+    """Write <base_path>.build.json when obj has a non-default build property."""
+    changed = non_default_build_properties(obj)
+    if not changed:
+        return
+    text = json.dumps(changed, sort_keys=True, indent=4, separators=(",", ": "))
+    with open_utf8(base_path + BUILD_PROPERTIES_SUFFIX, "w") as f:
+        f.write(u"%s\n" % text)
+
+
+def apply_build_properties(obj, base_path):
+    """Restore build properties from <base_path>.build.json, if there is one."""
+    path = base_path + BUILD_PROPERTIES_SUFFIX
+    if not os.path.exists(path):
+        return
+    with open_utf8(path, "r") as f:
+        wanted = json.loads(f.read())
+    build_properties = _build_properties_of(obj)
+    if build_properties is None:
+        print("WARNING: " + obj.get_name() + " has no build properties; ignoring " + path)
+        return
+    known = dict(BUILD_PROPERTY_DEFAULTS)
+    for name in sorted(wanted):
+        if name not in known or not _property_is_valid(build_properties, name):
+            print("WARNING: cannot set build property " + name + " on " + obj.get_name())
+            continue
+        value = wanted[name]
+        setattr(build_properties, name, bool(value) if isinstance(known[name], bool) else "%s" % value)
+
+
 def export_folder(child_obj, parent_obj, parent_folder_path, export_child_fn):
     child_obj_folder = os.path.join(parent_folder_path, child_obj.get_name())
     os.mkdir(child_obj_folder)
+    write_build_properties(child_obj, child_obj_folder)
     for c in child_obj.get_children():
         export_child_fn(c, child_obj, child_obj_folder)
 
@@ -93,6 +178,7 @@ def import_folder(child, dir_path, dir_parent_obj, import_dir_fn):
         ObjectType.FOLDER,
         "Folder of name " + child + " should have been created, but cannot be found",
     )
+    apply_build_properties(folder_obj, os.path.join(dir_path, child))
     import_dir_fn(os.path.join(dir_path, child), folder_obj)
 
 
@@ -100,6 +186,7 @@ def export_pou(child_obj, parent_obj, parent_folder_path, export_child_fn):
     if child_obj.has_textual_implementation:
         with open_utf8(os.path.join(parent_folder_path, child_obj.get_name() + ".st"), "w") as f:
             write_st(child_obj, f)
+        write_build_properties(child_obj, os.path.join(parent_folder_path, child_obj.get_name()))
     else:
         export_native(child_obj, parent_obj, parent_folder_path, export_child_fn)
         # Derived, review-only. The native xml above stays the import source.
@@ -114,6 +201,7 @@ def import_pou_st(child, dir_path, dir_parent_obj, import_dir_fn):
     pou_obj = dir_parent_obj.create_pou(filename)
     with open_utf8(os.path.join(dir_path, child), "r") as f:
         import_st(f, pou_obj)
+    apply_build_properties(pou_obj, os.path.join(dir_path, filename))
 
 
 def export_gvl(child_obj, parent_obj, parent_folder_path, export_child_fn):
@@ -184,6 +272,7 @@ def import_native(child, dir_path, dir_parent_obj, import_dir_fn):
 def export_dut(child_obj, parent_obj, parent_folder_path, export_child_fn):
     with open_utf8(os.path.join(parent_folder_path, child_obj.get_name() + ".st"), "w") as f:
         f.write(child_obj.textual_declaration.text)
+    write_build_properties(child_obj, os.path.join(parent_folder_path, child_obj.get_name()))
 
 
 def import_dut(child, dir_path, dir_parent_obj, import_dir_fn):
@@ -194,14 +283,15 @@ def import_dut(child, dir_path, dir_parent_obj, import_dir_fn):
         # Normalize trailing whitespace the same way import_st does, so that
         # export -> import -> export round-trips are byte-identical.
         dut_obj.textual_declaration.replace(f.read().strip() + u"\n")
+    apply_build_properties(dut_obj, os.path.join(dir_path, filename))
 
 
 def export_method(child_obj, parent_obj, parent_folder_path, export_child_fn):
     if child_obj.has_textual_implementation:
-        with open_utf8(
-            os.path.join(parent_folder_path, parent_obj.get_name() + "." + child_obj.get_name() + ".st"), "w"
-        ) as f:
+        base = os.path.join(parent_folder_path, parent_obj.get_name() + "." + child_obj.get_name())
+        with open_utf8(base + ".st", "w") as f:
             write_st(child_obj, f)
+        write_build_properties(child_obj, base)
     else:
         base = os.path.join(parent_folder_path, parent_obj.get_name() + "." + child_obj.get_name())
         write_native(child_obj, base + ".xml", recursive=False)
@@ -224,6 +314,7 @@ def import_method_st(child, dir_path, dir_parent_obj, import_dir_fn):
     method_obj = parent_obj.create_method(method_name)
     with open_utf8(full_path, "r") as f:
         import_st(f, method_obj)
+    apply_build_properties(method_obj, os.path.join(dir_path, filename))
 
 
 def _export_member_st_or_xml(child_obj, parent_obj, parent_folder_path, st_suffix):
@@ -234,6 +325,7 @@ def _export_member_st_or_xml(child_obj, parent_obj, parent_folder_path, st_suffi
     if child_obj.has_textual_implementation:
         with open_utf8(base + st_suffix + ".st", "w") as f:
             f.write(child_obj.textual_implementation.text)
+        write_build_properties(child_obj, base)
     else:
         write_native(child_obj, base + ".xml", recursive=False)
         # member_name: see export_method. An action's export carries the whole
@@ -264,6 +356,7 @@ def _import_member_st(child, dir_path, dir_parent_obj, st_suffix, create_fn):
     new_obj = create_fn(parent_obj, child_name)
     with open_utf8(full_path, "r") as f:
         new_obj.textual_implementation.replace(f.read().strip() + u"\n")
+    apply_build_properties(new_obj, os.path.join(dir_path, filename))
 
 
 def import_action_st(child, dir_path, dir_parent_obj, import_dir_fn):
